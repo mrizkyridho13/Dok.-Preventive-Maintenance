@@ -1,4 +1,6 @@
 import React, { useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import {
   Camera,
   Image as ImageIcon,
@@ -42,23 +44,20 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Input 1: capture="environment" -> memicu intent kamera HP / pemilih aplikasi kamera (jika didukung perangkat/APK)
+  // Fallback web input 1: capture="environment" -> memicu kamera di browser mobile
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  // Input 2: Galeri foto biasa
+  // Fallback web input 2: Galeri foto biasa di browser
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const effectiveFitMode: PhotoFitMode = photo?.fitMode || globalFitMode;
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const saveCompressedPhoto = async (source: File | Blob | string) => {
+    setIsProcessing(true);
     try {
-      setIsProcessing(true);
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate(25);
       }
-      const compressedDataUrl = await compressImage(file);
+      const compressedDataUrl = await compressImage(source);
       onUpdatePhoto({
         id: `p-${Date.now()}`,
         dataUrl: compressedDataUrl,
@@ -67,11 +66,52 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
       });
       setShowActionMenu(false);
       setConfirmDelete(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      await saveCompressedPhoto(file);
     } catch (err) {
       console.error('Error compressing image:', err);
     } finally {
-      setIsProcessing(false);
       e.target.value = '';
+    }
+  };
+
+  const handleSelectPhotoSource = async (mode: 'camera' | 'gallery') => {
+    // Jika berjalan di browser web biasa, gunakan input file standar
+    if (!Capacitor.isNativePlatform()) {
+      if (mode === 'camera') {
+        cameraInputRef.current?.click();
+      } else {
+        galleryInputRef.current?.click();
+      }
+      return;
+    }
+
+    // Jika berjalan di Android Native (Capacitor APK), gunakan @capacitor/camera
+    try {
+      const captured = await CapacitorCamera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: mode === 'camera' ? CameraSource.Camera : CameraSource.Photos,
+      });
+
+      if (captured.dataUrl) {
+        await saveCompressedPhoto(captured.dataUrl);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/cancel|dismiss|abort|no image/i.test(msg)) {
+        console.error('Native camera/gallery error:', err);
+      }
     }
   };
 
@@ -107,9 +147,9 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
 
   return (
     <div className="flex flex-col w-full bg-white border border-black shadow-2xs min-w-0">
-      {/* Hidden file inputs:
-          1) cameraInputRef (capture=environment) triggers device camera / camera app intent
-          2) galleryInputRef picks existing photo from gallery */}
+      {/* Hidden file inputs (cadangan saat dibuka via browser web biasa):
+          1) cameraInputRef (capture=environment)
+          2) galleryInputRef (galeri web) */}
       <input
         type="file"
         ref={cameraInputRef}
@@ -160,21 +200,21 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
               loading="lazy"
             />
           ) : (
-            /* Empty Box: 2 Opsi Manual — Kamera / App dan Dari Galeri */
+            /* Empty Box: 2 Opsi Manual — BUKA KAMERA (native app chooser) dan Dari Galeri */
             <div className="w-full h-full p-1.5 sm:p-2 md:p-3 flex flex-col justify-center items-stretch gap-1.5 sm:gap-2 bg-slate-900 text-white">
-              {/* Tombol 1: Buka Kamera / App */}
+              {/* Tombol 1: BUKA KAMERA */}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  cameraInputRef.current?.click();
+                  void handleSelectPhotoSource('camera');
                 }}
-                title="Buka kamera HP atau aplikasi kamera pilihan"
+                title="Buka kamera HP atau aplikasi kamera (Timemark, Timestamp, dll)"
                 className="w-full py-1.5 sm:py-2 px-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 border border-slate-500 transition active:scale-98"
               >
                 <Camera className="w-4 h-4 shrink-0 text-white" />
                 <span className="text-[11px] sm:text-xs uppercase truncate">
-                  Kamera / App
+                  BUKA KAMERA
                 </span>
               </button>
 
@@ -183,9 +223,9 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  galleryInputRef.current?.click();
+                  void handleSelectPhotoSource('gallery');
                 }}
-                title="Ambil foto dari Galeri HP"
+                title="Ambil foto dari Galeri lokal HP"
                 className="w-full py-1.5 sm:py-2 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-semibold rounded-xs flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-98"
               >
                 <ImageIcon className="w-3.5 h-3.5 shrink-0 text-slate-300" />
@@ -366,19 +406,19 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
                 type="button"
                 onClick={() => {
                   setShowActionMenu(false);
-                  cameraInputRef.current?.click();
+                  void handleSelectPhotoSource('camera');
                 }}
                 className="w-full py-2 px-2 bg-slate-800 hover:bg-slate-900 text-white font-bold border border-black text-xs flex items-center justify-center gap-1.5"
               >
                 <Camera className="w-3.5 h-3.5" />
-                Ganti Foto (Kamera / App)
+                Ganti Foto (BUKA KAMERA)
               </button>
 
               <button
                 type="button"
                 onClick={() => {
                   setShowActionMenu(false);
-                  galleryInputRef.current?.click();
+                  void handleSelectPhotoSource('gallery');
                 }}
                 className="w-full py-2 px-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold border border-black text-xs flex items-center justify-center gap-1.5"
               >

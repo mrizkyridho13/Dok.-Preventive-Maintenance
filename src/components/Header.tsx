@@ -1,4 +1,5 @@
 import React from 'react';
+import { Capacitor } from '@capacitor/core';
 import {
   Eye,
   FileDown,
@@ -9,6 +10,7 @@ import {
   Building,
   Maximize2,
   Minimize2,
+  Download,
 } from 'lucide-react';
 import { ReportMeta } from '../types/report';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -42,6 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
   isExporting,
 }) => {
   const isOnline = useOnlineStatus();
+  const isNativeApp = Capacitor.isNativePlatform();
   const isFillMode = (meta.photoFitMode || 'original') === 'fill';
 
   const handleToggleLabels = () => {
@@ -59,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="w-full bg-slate-900 text-white border-b border-black select-none">
       <div className="w-full max-w-md md:max-w-3xl lg:max-w-4xl mx-auto px-2.5 sm:px-4 py-2 md:py-2.5 space-y-2">
         {/* Row 1: Brand & Top Utilities with Company Logo */}
-        <div className="flex items-center justify-between gap-2 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             <img
               src="/logo.jpg"
@@ -76,8 +79,30 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <PWAInstallButton />
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
+            {!isNativeApp && (
+              <>
+                <PWAInstallButton />
+                <a
+                  href="https://github.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-7 md:h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-amber-300 border border-amber-400/50 text-[11px] md:text-xs font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95"
+                  title="Download aplikasi Android (PGE-DocuTek.apk)"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    className="w-3.5 h-3.5 text-emerald-400 shrink-0"
+                  >
+                    <path d="M17.523 15.341a.999.999 0 0 1-1-.999c0-.552.448-1 1-1s1 .448 1 1a.999.999 0 0 1-1 .999zm-11.046 0a.999.999 0 0 1-1-.999c0-.552.448-1 1-1s1 .448 1 1a.999.999 0 0 1-1 .999zm11.404-6.02l1.997-3.46a.416.416 0 0 0-.152-.567.416.416 0 0 0-.568.152l-2.022 3.503C15.611 8.263 13.86 7.875 12 7.875c-1.86 0-3.611.388-5.136 1.074L4.842 5.446a.416.416 0 0 0-.568-.152.416.416 0 0 0-.152.567l1.997 3.46C2.688 11.187.343 14.658 0 18.75h24c-.343-4.092-2.688-7.563-6.119-9.429z" />
+                  </svg>
+                  <Download className="w-3 h-3 text-amber-300 shrink-0" />
+                  <span>Download APK</span>
+                </a>
+              </>
+            )}
             <button
               type="button"
               onClick={onOpenMetaModal}

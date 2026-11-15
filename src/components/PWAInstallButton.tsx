@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Download, Smartphone } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
@@ -6,7 +7,12 @@ export const PWAInstallButton: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
-  // If already running in standalone PWA / APK mode, hide the install prompt
+  // Sembunyikan tombol install PWA saat dibuka dari dalam APK Android Native
+  if (Capacitor.isNativePlatform()) {
+    return null;
+  }
+
+  // If already running in standalone PWA mode, hide the install prompt
   if (isInstalled) {
     return (
       <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold">
