@@ -3,7 +3,6 @@ import {
   Eye,
   FileDown,
   FileText,
-  FileSpreadsheet,
   Image as ImageIcon,
   CheckCircle2,
   WifiOff,
@@ -26,7 +25,6 @@ interface HeaderProps {
   onDownloadPDF: () => void;
   onDownloadCurrentJPG: () => void;
   onDownloadDOCX: () => void;
-  onDownloadXLSX: () => void;
   isSaving: boolean;
   isExporting: boolean;
 }
@@ -40,7 +38,6 @@ export const Header: React.FC<HeaderProps> = ({
   onDownloadPDF,
   onDownloadCurrentJPG,
   onDownloadDOCX,
-  onDownloadXLSX,
   isSaving,
   isExporting,
 }) => {
@@ -93,70 +90,54 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Row 2: Action & Export Buttons (Pratinjau, JPG, PDF, Word, Excel) */}
-        <div className="space-y-1.5 md:space-y-0 md:grid md:grid-cols-5 md:gap-2">
-          <div className="grid grid-cols-2 gap-1.5 md:contents">
-            {/* Pratinjau (Preview) */}
-            <button
-              type="button"
-              onClick={onOpenPreview}
-              className="h-9 md:h-10 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white border border-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
-              title="Pratinjau hasil sebelum download"
-            >
-              <Eye className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-              <span>Pratinjau</span>
-            </button>
+        {/* Row 2: Action & Export Buttons (Pratinjau, JPG, PDF, Word) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 md:gap-2">
+          {/* Pratinjau (Preview) */}
+          <button
+            type="button"
+            onClick={onOpenPreview}
+            className="h-9 md:h-10 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white border border-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            title="Pratinjau hasil sebelum download"
+          >
+            <Eye className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+            <span>Pratinjau</span>
+          </button>
 
-            {/* Unduh Lembar Ini (JPG) */}
-            <button
-              type="button"
-              disabled={isExporting}
-              onClick={onDownloadCurrentJPG}
-              className="h-9 md:h-10 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 disabled:opacity-40 text-white border border-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
-              title="Download lembar ini format JPG untuk dikirim via WA"
-            >
-              <ImageIcon className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-              <span>Unduh JPG</span>
-            </button>
-          </div>
+          {/* Unduh Lembar Ini (JPG) */}
+          <button
+            type="button"
+            disabled={isExporting}
+            onClick={onDownloadCurrentJPG}
+            className="h-9 md:h-10 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 disabled:opacity-40 text-white border border-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            title="Download lembar ini format JPG untuk dikirim via WA"
+          >
+            <ImageIcon className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+            <span>Unduh JPG</span>
+          </button>
 
-          <div className="grid grid-cols-3 gap-1.5 md:contents">
-            {/* Unduh Semua Lembar (PDF) */}
-            <button
-              type="button"
-              disabled={isExporting}
-              onClick={onDownloadPDF}
-              className="h-9 md:h-10 bg-slate-100 hover:bg-white active:bg-slate-200 disabled:opacity-40 text-slate-950 border border-black font-extrabold text-xs flex items-center justify-center gap-1 transition active:scale-98"
-              title="Download seluruh halaman dalam 1 file PDF A4"
-            >
-              <FileDown className="w-3.5 h-3.5 text-slate-950 stroke-[2.5] shrink-0" />
-              <span>PDF</span>
-            </button>
+          {/* Unduh Semua Lembar (PDF) */}
+          <button
+            type="button"
+            disabled={isExporting}
+            onClick={onDownloadPDF}
+            className="h-9 md:h-10 bg-slate-100 hover:bg-white active:bg-slate-200 disabled:opacity-40 text-slate-950 border border-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            title="Download seluruh halaman dalam 1 file PDF A4"
+          >
+            <FileDown className="w-3.5 h-3.5 text-slate-950 stroke-[2.5] shrink-0" />
+            <span>Unduh PDF</span>
+          </button>
 
-            {/* Unduh Word (.docx) */}
-            <button
-              type="button"
-              disabled={isExporting}
-              onClick={onDownloadDOCX}
-              className="h-9 md:h-10 bg-blue-700 hover:bg-blue-600 active:bg-blue-800 disabled:opacity-40 text-white border border-blue-900 font-bold text-xs flex items-center justify-center gap-1 transition active:scale-98"
-              title="Download format Word (.docx) agar dapat diedit manual oleh admin proyek"
-            >
-              <FileText className="w-3.5 h-3.5 text-blue-100 shrink-0" />
-              <span>Word</span>
-            </button>
-
-            {/* Unduh Excel (.xlsx) */}
-            <button
-              type="button"
-              disabled={isExporting}
-              onClick={onDownloadXLSX}
-              className="h-9 md:h-10 bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 disabled:opacity-40 text-white border border-emerald-900 font-bold text-xs flex items-center justify-center gap-1 transition active:scale-98"
-              title="Download format Excel (.xlsx) agar dapat diedit manual oleh admin proyek"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100 shrink-0" />
-              <span>Excel</span>
-            </button>
-          </div>
+          {/* Unduh Word (.docx) */}
+          <button
+            type="button"
+            disabled={isExporting}
+            onClick={onDownloadDOCX}
+            className="h-9 md:h-10 bg-blue-700 hover:bg-blue-600 active:bg-blue-800 disabled:opacity-40 text-white border border-blue-900 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            title="Download format Word (.docx) agar dapat diedit manual oleh admin proyek"
+          >
+            <FileText className="w-3.5 h-3.5 text-blue-100 shrink-0" />
+            <span>Unduh Word</span>
+          </button>
         </div>
 
         {/* Row 3: BEFORE/AFTER Toggle, Photo Fit Mode Toggle, & Save Status */}

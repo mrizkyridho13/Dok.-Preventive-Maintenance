@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   FileDown,
   FileText,
-  FileSpreadsheet,
   Image as ImageIcon,
   ChevronLeft,
   ChevronRight,
@@ -19,7 +18,6 @@ interface PreviewModalProps {
   onDownloadPDF: () => void;
   onDownloadJPG: (sheetIndex: number) => void;
   onDownloadDOCX: () => void;
-  onDownloadXLSX: () => void;
   isExporting: boolean;
 }
 
@@ -32,7 +30,6 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
   onDownloadPDF,
   onDownloadJPG,
   onDownloadDOCX,
-  onDownloadXLSX,
   isExporting,
 }) => {
   const [currentSheetIdx, setCurrentSheetIdx] = useState(initialIndex);
@@ -234,8 +231,8 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         </div>
       </div>
 
-      {/* Bottom Action Buttons: JPG, PDF, Word, Excel */}
-      <div className="w-full max-w-md md:max-w-2xl mx-auto bg-slate-900 text-white p-2 grid grid-cols-2 sm:grid-cols-4 gap-1.5 border border-slate-800">
+      {/* Bottom Action Buttons: JPG, PDF, Word */}
+      <div className="w-full max-w-md md:max-w-2xl mx-auto bg-slate-900 text-white p-2 grid grid-cols-3 gap-1.5 border border-slate-800">
         <button
           type="button"
           disabled={isExporting}
@@ -264,16 +261,6 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         >
           <FileText className="w-3.5 h-3.5 shrink-0" />
           <span>Word</span>
-        </button>
-
-        <button
-          type="button"
-          disabled={isExporting}
-          onClick={onDownloadXLSX}
-          className="py-2 px-2 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white border border-emerald-900 font-bold text-xs flex items-center justify-center gap-1"
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
-          <span>Excel</span>
         </button>
       </div>
     </div>
