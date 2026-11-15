@@ -84,7 +84,7 @@ export const Header: React.FC<HeaderProps> = ({
               <>
                 <PWAInstallButton />
                 <a
-                  href="https://github.com"
+                  href="https://github.com//mrizkyridho13/Dok.-Preventive-Maintenance/releases/latest/download/PGE-DocuTek.apk"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="h-7 md:h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-amber-300 border border-amber-400/50 text-[11px] md:text-xs font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95"
