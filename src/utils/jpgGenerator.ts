@@ -169,6 +169,10 @@ export async function generateSheetJPG(
     const leftBoxNumber = row.beforeNumber ?? (baseBoxNum + rIdx * 2 + 1);
     const rightBoxNumber = row.afterNumber ?? (baseBoxNum + rIdx * 2 + 2);
 
+    const globalFitMode = meta.photoFitMode || 'original';
+    const leftFitMode = row.beforePhoto?.fitMode || globalFitMode;
+    const rightFitMode = row.afterPhoto?.fitMode || globalFitMode;
+
     // Left (BEFORE)
     await renderCanvasSlot(
       ctx,
@@ -182,7 +186,8 @@ export async function generateSheetJPG(
       leftBoxNumber,
       row.beforePhoto?.dataUrl,
       row.beforeCaption,
-      meta.showBeforeAfterLabels
+      meta.showBeforeAfterLabels,
+      leftFitMode
     );
 
     // Right (AFTER)
@@ -198,7 +203,8 @@ export async function generateSheetJPG(
       rightBoxNumber,
       row.afterPhoto?.dataUrl,
       row.afterCaption,
-      meta.showBeforeAfterLabels
+      meta.showBeforeAfterLabels,
+      rightFitMode
     );
   }
 
@@ -256,7 +262,8 @@ async function renderCanvasSlot(
   boxNumber: number,
   photoDataUrl?: string,
   captionText?: string,
-  showLabel: boolean = true
+  showLabel: boolean = true,
+  fitMode: 'original' | 'fill' = 'original'
 ) {
   let curY = slotTop;
 
@@ -287,19 +294,24 @@ async function renderCanvasSlot(
       const imgW = img.naturalWidth || img.width;
       const imgH = img.naturalHeight || img.height;
 
-      // Aspect-fit inside the box with slight 4px inner inset so border never touches image edge
-      const innerPad = 4;
-      const availW = photoW - innerPad * 2;
-      const availH = photoH - innerPad * 2;
-      const scale = Math.min(availW / imgW, availH / imgH);
-      const drawW = imgW * scale;
-      const drawH = imgH * scale;
-      const drawX = photoX + (photoW - drawW) / 2;
-      const drawY = curY + (photoH - drawH) / 2;
-
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+      if (fitMode === 'fill') {
+        // Sesuaikan dengan kotak (mengisi penuh kolom tanpa ruang putih & tanpa memotong timestamp)
+        ctx.drawImage(img, photoX, curY, photoW, photoH);
+      } else {
+        // Sesuai aslinya (aspect-fit di tengah dengan ruang putih tipis agar rasio asli tetap terjaga)
+        const innerPad = 4;
+        const availW = photoW - innerPad * 2;
+        const availH = photoH - innerPad * 2;
+        const scale = Math.min(availW / imgW, availH / imgH);
+        const drawW = imgW * scale;
+        const drawH = imgH * scale;
+        const drawX = photoX + (photoW - drawW) / 2;
+        const drawY = curY + (photoH - drawH) / 2;
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+      }
     } catch {
       ctx.fillStyle = '#f8fafc';
       ctx.fillRect(photoX, curY, photoW, photoH);

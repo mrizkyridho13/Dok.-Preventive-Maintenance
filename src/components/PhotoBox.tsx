@@ -1,6 +1,16 @@
 import React, { useRef, useState } from 'react';
-import { Camera, Image as ImageIcon, Trash2, RefreshCw, ZoomIn, Copy, Check } from 'lucide-react';
-import { PhotoItem } from '../types/report';
+import {
+  Camera,
+  Image as ImageIcon,
+  Trash2,
+  RefreshCw,
+  ZoomIn,
+  Copy,
+  Check,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
+import { PhotoItem, PhotoFitMode } from '../types/report';
 import { compressImage } from '../utils/imageCompressor';
 
 interface PhotoBoxProps {
@@ -9,6 +19,7 @@ interface PhotoBoxProps {
   photo?: PhotoItem;
   caption: string;
   showLabel: boolean;
+  globalFitMode: PhotoFitMode;
   onUpdatePhoto: (photo?: PhotoItem) => void;
   onUpdateCaption: (caption: string) => void;
   onCopyToRight?: () => void;
@@ -20,6 +31,7 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   photo,
   caption,
   showLabel,
+  globalFitMode,
   onUpdatePhoto,
   onUpdateCaption,
   onCopyToRight,
@@ -28,9 +40,12 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showFullView, setShowFullView] = useState(false);
   const [copiedFeedback, setCopiedFeedback] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  const effectiveFitMode: PhotoFitMode = photo?.fitMode || globalFitMode;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,15 +61,33 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
         id: `p-${Date.now()}`,
         dataUrl: compressedDataUrl,
         timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        fitMode: photo?.fitMode,
       });
       setShowActionMenu(false);
+      setConfirmDelete(false);
     } catch (err) {
       console.error('Error compressing image:', err);
-      alert('Gagal memproses foto. Silakan coba lagi.');
     } finally {
       setIsProcessing(false);
       e.target.value = '';
     }
+  };
+
+  const handleSetFitMode = (mode: PhotoFitMode) => {
+    if (!photo) return;
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(15);
+    }
+    onUpdatePhoto({
+      ...photo,
+      fitMode: mode,
+    });
+  };
+
+  const handleQuickToggleFitMode = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextMode: PhotoFitMode = effectiveFitMode === 'fill' ? 'original' : 'fill';
+    handleSetFitMode(nextMode);
   };
 
   const handleCopy = () => {
@@ -71,7 +104,7 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   const isBefore = type === 'before';
 
   return (
-    <div className="flex flex-col w-full bg-white border border-black shadow-2xs">
+    <div className="flex flex-col w-full bg-white border border-black shadow-2xs min-w-0">
       {/* Hidden file inputs for direct camera (environment) and gallery */}
       <input
         type="file"
@@ -96,12 +129,15 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
         </div>
       )}
 
-      {/* 2. Photo Slot Box: Proporsi Pas (aspect-[1.18/1], background putih bersih) */}
+      {/* 2. Photo Slot Box: Proporsi Pas A4 (aspect-[87/70], background putih bersih) */}
       <div className="p-0.5 sm:p-1 bg-white">
         <div
-          className="relative w-full aspect-[1.18/1] bg-white border border-black overflow-hidden flex flex-col items-center justify-center select-none"
+          className="relative w-full aspect-[87/70] bg-white border border-black overflow-hidden flex flex-col items-center justify-center select-none"
           onClick={() => {
-            if (photo) setShowActionMenu(true);
+            if (photo) {
+              setConfirmDelete(false);
+              setShowActionMenu(true);
+            }
           }}
         >
           {isProcessing ? (
@@ -111,24 +147,49 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
             </div>
           ) : photo ? (
             <>
-              {/* Photo Display: object-contain with white background ensures timestamps are completely uncropped */}
+              {/* Photo Display: object-fill (sesuaikan kotak) atau object-contain (sesuai aslinya) */}
               <img
                 src={photo.dataUrl}
                 alt={`Foto #${boxNumber}`}
-                className="w-full h-full object-contain cursor-pointer"
+                className={`w-full h-full cursor-pointer ${
+                  effectiveFitMode === 'fill' ? 'object-fill' : 'object-contain'
+                }`}
                 loading="lazy"
               />
 
-              {/* Minimal tap prompt */}
-              <div className="absolute inset-x-0 bottom-0 bg-slate-900/75 py-0.5 text-center cursor-pointer">
-                <span className="text-[9px] text-white flex items-center justify-center gap-1 font-medium">
-                  <RefreshCw className="w-2.5 h-2.5" /> Ketuk untuk ganti
+              {/* Bottom bar: tap to replace + 1-tap fit mode switch */}
+              <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 px-1 py-0.5 flex items-center justify-between gap-1 cursor-pointer">
+                <span className="text-[9px] md:text-[10px] text-white flex items-center gap-1 font-medium truncate">
+                  <RefreshCw className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate">Ganti / Opsi</span>
                 </span>
+                <button
+                  type="button"
+                  onClick={handleQuickToggleFitMode}
+                  title="Ubah tampilan foto: Isi Kotak atau Sesuai Aslinya"
+                  className={`shrink-0 px-1.5 py-0.5 text-[9px] font-bold border flex items-center gap-0.5 transition active:scale-95 ${
+                    effectiveFitMode === 'fill'
+                      ? 'bg-amber-400 text-slate-950 border-amber-200'
+                      : 'bg-slate-800 text-white border-slate-500 hover:bg-slate-700'
+                  }`}
+                >
+                  {effectiveFitMode === 'fill' ? (
+                    <>
+                      <Maximize2 className="w-2.5 h-2.5" />
+                      <span>Isi Kotak</span>
+                    </>
+                  ) : (
+                    <>
+                      <Minimize2 className="w-2.5 h-2.5" />
+                      <span>Asli</span>
+                    </>
+                  )}
+                </button>
               </div>
             </>
           ) : (
-            /* Empty Box: Tombol Ikon Tetap Sama Sesuai Permintaan Pengguna */
-            <div className="w-full h-full p-1.5 sm:p-2 flex flex-col justify-center items-stretch gap-1.5 sm:gap-2 bg-slate-900 text-white">
+            /* Empty Box: Tombol Manual Kamera & Galeri */
+            <div className="w-full h-full p-1.5 sm:p-2 md:p-3 flex flex-col justify-center items-stretch gap-1.5 sm:gap-2 bg-slate-900 text-white">
               {/* Tombol 1: Buka Kamera Belakang */}
               <button
                 type="button"
@@ -159,18 +220,16 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
         </div>
       </div>
 
-      {/* 3. Kotak Nomor Urut Otomatis & Input Teks Keterangan (Tersambung di Bawah Foto Seperti Gambar 2) */}
+      {/* 3. Kotak Nomor Urut Otomatis & Input Teks Keterangan */}
       <div className="border-t border-black bg-white">
         <div className="flex items-center">
-          {/* Kotak Nomor Urut: e.g. 7, 8, 9, 10... persis gambar referensi */}
           <div
             title={`Foto #${boxNumber}`}
-            className="shrink-0 w-8 sm:w-9 h-7 sm:h-8 bg-white text-black font-black text-xs sm:text-sm flex items-center justify-center border-r border-black select-none"
+            className="shrink-0 w-7 sm:w-9 h-7 sm:h-8 bg-white text-black font-black text-xs sm:text-sm flex items-center justify-center border-r border-black select-none"
           >
             {boxNumber}
           </div>
 
-          {/* Kolom Input Keterangan Unit */}
           <input
             type="text"
             value={caption}
@@ -199,7 +258,8 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
               ) : (
                 <>
                   <Copy className="w-3 h-3" />
-                  <span>Salin &rarr;</span>
+                  <span className="hidden sm:inline">Salin</span>
+                  <span>&rarr;</span>
                 </>
               )}
             </button>
@@ -207,14 +267,14 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
         </div>
       </div>
 
-      {/* Modal / Dialog Opsi Foto (Ganti / Hapus / Zoom) */}
+      {/* Modal / Dialog Opsi Foto (Resolusi Tampilan / Ganti / Hapus / Zoom) */}
       {showActionMenu && photo && (
         <div
           className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3"
           onClick={() => setShowActionMenu(false)}
         >
           <div
-            className="w-full max-w-xs bg-white border-2 border-black p-3.5 space-y-2.5 animate-in fade-in zoom-in-95"
+            className="w-full max-w-xs sm:max-w-sm bg-white border-2 border-black p-3.5 space-y-2.5 animate-in fade-in zoom-in-95"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-1.5 border-b border-slate-300">
@@ -230,15 +290,50 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
               </button>
             </div>
 
-            <div className="h-28 bg-black border border-black flex items-center justify-center overflow-hidden">
+            <div className="h-32 bg-white border border-black flex items-center justify-center overflow-hidden">
               <img
                 src={photo.dataUrl}
                 alt="preview"
-                className="h-full w-auto object-contain"
+                className={`h-full w-full ${
+                  effectiveFitMode === 'fill' ? 'object-fill' : 'object-contain'
+                }`}
               />
             </div>
 
-            <div className="space-y-1.5 pt-1">
+            {/* Pilihan Resolusi / Tampilan Foto */}
+            <div className="space-y-1">
+              <div className="text-[11px] font-bold text-slate-700">
+                Resolusi / Tampilan Foto di Kotak:
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleSetFitMode('fill')}
+                  className={`py-2 px-2 text-xs font-bold border flex items-center justify-center gap-1 transition ${
+                    effectiveFitMode === 'fill'
+                      ? 'bg-slate-900 text-white border-black'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-400'
+                  }`}
+                >
+                  <Maximize2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Sesuaikan Kotak</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetFitMode('original')}
+                  className={`py-2 px-2 text-xs font-bold border flex items-center justify-center gap-1 transition ${
+                    effectiveFitMode === 'original'
+                      ? 'bg-slate-900 text-white border-black'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-400'
+                  }`}
+                >
+                  <Minimize2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Sesuai Aslinya</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 pt-1 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => {
@@ -275,19 +370,37 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
                 Ganti Foto (Dari Galeri)
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm('Hapus foto ini?')) {
-                    onUpdatePhoto(undefined);
-                    setShowActionMenu(false);
-                  }
-                }}
-                className="w-full py-1.5 px-2 text-red-700 hover:bg-red-50 font-semibold border border-red-300 text-xs flex items-center justify-center gap-1.5"
-              >
-                <Trash2 className="w-3 h-3" />
-                Hapus Foto Ini
-              </button>
+              {!confirmDelete ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="w-full py-1.5 px-2 text-red-700 hover:bg-red-50 font-semibold border border-red-300 text-xs flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Hapus Foto Ini
+                </button>
+              ) : (
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300 text-xs"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdatePhoto(undefined);
+                      setConfirmDelete(false);
+                      setShowActionMenu(false);
+                    }}
+                    className="py-1.5 px-2 bg-red-700 hover:bg-red-800 text-white font-bold border border-red-900 text-xs"
+                  >
+                    Ya, Hapus
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

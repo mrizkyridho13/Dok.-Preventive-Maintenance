@@ -1,7 +1,10 @@
+export type PhotoFitMode = 'original' | 'fill';
+
 export interface PhotoItem {
   id: string;
-  dataUrl: string; // Base64 compressed image (max 800px)
+  dataUrl: string; // Base64 compressed image (max 1440px)
   timestamp?: string; // Captured date/time if recorded
+  fitMode?: PhotoFitMode; // Per-photo override: 'fill' = sesuaikan kotak, 'original' = sesuai aslinya
 }
 
 export interface UnitRow {
@@ -29,6 +32,7 @@ export interface ReportMeta {
   date: string;
   jobOrderNumber: string;
   showBeforeAfterLabels: boolean;
+  photoFitMode?: PhotoFitMode;
 }
 
 export const DEFAULT_META: ReportMeta = {
@@ -39,4 +43,5 @@ export const DEFAULT_META: ReportMeta = {
   date: new Date().toISOString().split('T')[0],
   jobOrderNumber: '',
   showBeforeAfterLabels: true,
+  photoFitMode: 'original',
 };

@@ -160,6 +160,10 @@ async function renderPDFPage(
     const leftBoxNumber = rowData.beforeNumber ?? (baseBoxNum + rIdx * 2 + 1);
     const rightBoxNumber = rowData.afterNumber ?? (baseBoxNum + rIdx * 2 + 2);
 
+    const globalFitMode = meta.photoFitMode || 'original';
+    const leftFitMode = rowData.beforePhoto?.fitMode || globalFitMode;
+    const rightFitMode = rowData.afterPhoto?.fitMode || globalFitMode;
+
     // Left Column (BEFORE)
     await renderSlotPDF(
       doc,
@@ -173,7 +177,8 @@ async function renderPDFPage(
       leftBoxNumber,
       rowData.beforePhoto?.dataUrl,
       rowData.beforeCaption,
-      meta.showBeforeAfterLabels
+      meta.showBeforeAfterLabels,
+      leftFitMode
     );
 
     // Right Column (AFTER)
@@ -189,7 +194,8 @@ async function renderPDFPage(
       rightBoxNumber,
       rowData.afterPhoto?.dataUrl,
       rowData.afterCaption,
-      meta.showBeforeAfterLabels
+      meta.showBeforeAfterLabels,
+      rightFitMode
     );
   }
 
@@ -233,7 +239,8 @@ async function renderSlotPDF(
   boxNumber: number,
   photoDataUrl?: string,
   captionText?: string,
-  showLabel: boolean = true
+  showLabel: boolean = true,
+  fitMode: 'original' | 'fill' = 'original'
 ) {
   let curY = slotTop;
 
@@ -259,17 +266,23 @@ async function renderSlotPDF(
 
   if (photoDataUrl) {
     try {
-      const dims = await getImageDimensions(photoDataUrl);
-      const innerPad = 0.4;
-      const availW = photoW - innerPad * 2;
-      const availH = photoH - innerPad * 2;
-      const scale = Math.min(availW / dims.width, availH / dims.height);
-      const drawW = dims.width * scale;
-      const drawH = dims.height * scale;
-      const drawX = colX + (photoW - drawW) / 2;
-      const drawY = curY + (photoH - drawH) / 2;
+      if (fitMode === 'fill') {
+        // Sesuaikan dengan kotak (mengisi penuh kolom tanpa ruang putih & tanpa memotong timestamp)
+        doc.addImage(photoDataUrl, 'JPEG', colX, curY, photoW, photoH, undefined, 'FAST');
+      } else {
+        // Sesuai aslinya (aspect-fit di tengah)
+        const dims = await getImageDimensions(photoDataUrl);
+        const innerPad = 0.4;
+        const availW = photoW - innerPad * 2;
+        const availH = photoH - innerPad * 2;
+        const scale = Math.min(availW / dims.width, availH / dims.height);
+        const drawW = dims.width * scale;
+        const drawH = dims.height * scale;
+        const drawX = colX + (photoW - drawW) / 2;
+        const drawY = curY + (photoH - drawH) / 2;
 
-      doc.addImage(photoDataUrl, 'JPEG', drawX, drawY, drawW, drawH, undefined, 'FAST');
+        doc.addImage(photoDataUrl, 'JPEG', drawX, drawY, drawW, drawH, undefined, 'FAST');
+      }
     } catch (e) {
       console.error('Failed to add image to PDF:', e);
       doc.setFont('helvetica', 'italic');

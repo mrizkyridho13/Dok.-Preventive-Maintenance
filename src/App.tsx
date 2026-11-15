@@ -261,15 +261,49 @@ export default function App() {
     }
   };
 
+  // Handler: Toggle Global Photo Fit Mode ('original' <-> 'fill') and apply across photos
+  const handleTogglePhotoFitMode = () => {
+    const currentMode = meta.photoFitMode || 'original';
+    const nextMode = currentMode === 'fill' ? 'original' : 'fill';
+
+    setMeta((prev) => ({
+      ...prev,
+      photoFitMode: nextMode,
+    }));
+
+    // Reset per-photo overrides so all photos immediately follow the chosen global mode
+    setSheets((prevSheets) =>
+      prevSheets.map((sheet) => ({
+        ...sheet,
+        rows: sheet.rows.map((row) => ({
+          ...row,
+          beforePhoto: row.beforePhoto
+            ? { ...row.beforePhoto, fitMode: undefined }
+            : undefined,
+          afterPhoto: row.afterPhoto
+            ? { ...row.afterPhoto, fitMode: undefined }
+            : undefined,
+        })) as typeof sheet.rows,
+      }))
+    );
+
+    showToast(
+      nextMode === 'fill'
+        ? 'Mode semua foto: Sesuaikan Kotak (isi kolom)'
+        : 'Mode semua foto: Sesuai Aslinya'
+    );
+  };
+
   return (
-    // Clean, mobile-friendly root without horizontal scroll
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans overflow-x-hidden">
+    // Responsive root: adapts to mobile & PC/laptop cleanly with vertical scroll only
+    <div className="min-h-screen w-full bg-slate-100 text-slate-900 flex flex-col font-sans overflow-x-hidden">
       {/* 1. Header Toolbar (Static: tidak melayang / tidak mengikuti layar) */}
       <Header
         meta={meta}
         activeSheetNumber={activeSheetIndex + 1}
         totalSheets={sheets.length}
         onUpdateMeta={setMeta}
+        onTogglePhotoFitMode={handleTogglePhotoFitMode}
         onOpenMetaModal={() => setIsMetaModalOpen(true)}
         onOpenPreview={() => setIsPreviewModalOpen(true)}
         onDownloadPDF={handleDownloadPDF}
@@ -278,22 +312,22 @@ export default function App() {
         isExporting={isExporting}
       />
 
-      {/* 2. Main Content Container (Memuat 1 layar HP tanpa geser kanan-kiri) */}
-      <main className="w-full max-w-md mx-auto px-2 py-2 sm:px-3 space-y-2 flex-1">
+      {/* 2. Main Content Container (Menyesuaikan Mobile, Tablet, & PC/Laptop tanpa geser kanan-kiri) */}
+      <main className="w-full max-w-md md:max-w-3xl lg:max-w-4xl mx-auto px-2 py-2 sm:px-4 md:py-4 space-y-2 md:space-y-3 flex-1 min-w-0">
         {/* Kop Ringkas Dokumen (Format Sederhana & Formal dengan Logo PT) */}
-        <div className="bg-white border border-slate-300 p-2 text-xs select-none shadow-2xs">
+        <div className="bg-white border border-slate-300 p-2 md:p-3 text-xs select-none shadow-2xs">
           <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 mb-1.5 gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <img
                 src="/logo.jpg"
                 alt="Logo PGE"
-                className="w-7 h-7 object-contain rounded-xs border border-slate-300 shrink-0"
+                className="w-7 h-7 md:w-8 md:h-8 object-contain rounded-xs border border-slate-300 shrink-0"
               />
               <div className="min-w-0">
-                <div className="font-black text-slate-900 uppercase tracking-tight text-[11px] truncate">
-                  PT. PANCA GATRIK ELEKTRINDO
+                <div className="font-black text-slate-900 uppercase tracking-tight text-[11px] md:text-xs truncate">
+                  {(meta.companyName || 'PT. PANCA GATRIK ELEKTRINDO').trim().toUpperCase()}
                 </div>
-                <div className="font-semibold text-slate-600 text-[10px] truncate">
+                <div className="font-semibold text-slate-600 text-[10px] md:text-[11px] truncate">
                   {meta.projectName || 'DOKUMENTASI MAINTENANCE'}
                 </div>
               </div>
@@ -301,23 +335,23 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsMetaModalOpen(true)}
-              className="text-[10px] text-slate-700 hover:text-black font-bold px-1.5 py-0.5 bg-slate-100 border border-slate-300 shrink-0"
+              className="text-[10px] md:text-[11px] text-slate-700 hover:text-black font-bold px-2 py-1 bg-slate-100 border border-slate-300 shrink-0"
             >
               Ubah Data
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-600">
-            <div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 md:gap-2 text-[11px] md:text-xs text-slate-600">
+            <div className="min-w-0 truncate">
               Lokasi: <strong className="text-slate-900">{meta.location || '-'}</strong>
             </div>
-            <div>
+            <div className="min-w-0 truncate">
               Teknisi: <strong className="text-slate-900">{meta.technicianName || '-'}</strong>
             </div>
-            <div>
+            <div className="min-w-0 truncate">
               Tanggal: <strong className="text-slate-900">{meta.date}</strong>
             </div>
             {meta.jobOrderNumber && (
-              <div>
+              <div className="min-w-0 truncate">
                 SPK: <strong className="text-slate-900">{meta.jobOrderNumber}</strong>
               </div>
             )}
@@ -335,10 +369,11 @@ export default function App() {
         />
 
         {/* 4. Sheet Grid 2x3 (6 Kotak Foto Sederhana, Garis Bingkai Tipis Hitam) */}
-        <div className="w-full">
+        <div className="w-full min-w-0">
           <SheetGrid
             sheet={currentSheet}
             showLabels={meta.showBeforeAfterLabels}
+            globalFitMode={meta.photoFitMode || 'original'}
             onUpdateRow={handleUpdateRow}
             onCopyCaptionToRight={handleCopyCaptionToRight}
           />
@@ -347,13 +382,13 @@ export default function App() {
         {/* 5. Bagian Bawah Halaman (Static di alur dokumen biasa, TIDAK melayang/sticky) */}
         <div className="pt-2 pb-6 space-y-2">
           {/* Baris Tombol Aksi Bawah */}
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-3 gap-1.5 md:gap-2">
             <button
               type="button"
               onClick={() => setIsPreviewModalOpen(true)}
-              className="py-2.5 px-2 bg-white hover:bg-slate-50 text-slate-900 border border-black font-bold text-xs flex items-center justify-center gap-1 shadow-2xs"
+              className="py-2.5 px-2 bg-white hover:bg-slate-50 text-slate-900 border border-black font-bold text-xs md:text-sm flex items-center justify-center gap-1.5 shadow-2xs"
             >
-              <Eye className="w-3.5 h-3.5 text-slate-700" />
+              <Eye className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-700" />
               <span>Pratinjau</span>
             </button>
 
@@ -361,9 +396,9 @@ export default function App() {
               type="button"
               disabled={isExporting}
               onClick={() => handleDownloadCurrentJPG(activeSheetIndex)}
-              className="py-2.5 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 disabled:opacity-40 text-white font-bold text-xs flex items-center justify-center gap-1"
+              className="py-2.5 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 disabled:opacity-40 text-white font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
             >
-              <ImageIcon className="w-3.5 h-3.5 text-slate-300" />
+              <ImageIcon className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-300" />
               <span>Unduh JPG</span>
             </button>
 
@@ -371,9 +406,9 @@ export default function App() {
               type="button"
               disabled={isExporting}
               onClick={handleDownloadPDF}
-              className="py-2.5 px-2 bg-slate-900 hover:bg-black active:bg-slate-950 disabled:opacity-40 text-white font-black text-xs flex items-center justify-center gap-1"
+              className="py-2.5 px-2 bg-slate-900 hover:bg-black active:bg-slate-950 disabled:opacity-40 text-white font-black text-xs md:text-sm flex items-center justify-center gap-1.5"
             >
-              <FileDown className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+              <FileDown className="w-3.5 h-3.5 md:w-4 md:h-4 text-white stroke-[2.5]" />
               <span>Unduh PDF</span>
             </button>
           </div>
@@ -383,15 +418,15 @@ export default function App() {
             <button
               type="button"
               onClick={handleAddSheet}
-              className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 border border-slate-400 font-bold text-xs flex items-center justify-center gap-1"
+              className="w-full py-2 md:py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-900 border border-slate-400 font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
               <span>Tambah Lembar Baru (Total Saat Ini: {sheets.length} Lembar)</span>
             </button>
           )}
 
-          <div className="text-[10px] text-slate-500 text-center pt-1">
-            Format resmi 2x3 A4 &bull; Foto tersimpan otomatis di HP &bull; Bebas kuota / offline
+          <div className="text-[10px] md:text-xs text-slate-500 text-center pt-1">
+            Format resmi 2x3 A4 &bull; Foto tersimpan otomatis di perangkat &bull; Bebas kuota / offline
           </div>
         </div>
       </main>
