@@ -40,7 +40,7 @@ jobs:
             npx cap add android
           fi
 
-      - name: Configure Android permissions (CAMERA & READ_MEDIA_IMAGES)
+      - name: Configure Android permissions (CAMERA, READ_EXTERNAL_STORAGE & READ_MEDIA_IMAGES)
         run: |
           node -e "
             const fs = require('fs');
@@ -55,11 +55,21 @@ jobs:
               additions.push('    <uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\" />');
             }
             if (!xml.includes('android.permission.READ_EXTERNAL_STORAGE')) {
-              additions.push('    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" android:maxSdkVersion=\"32\" />');
+              additions.push('    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />');
             }
-            if (!xml.includes('android.media.action.IMAGE_CAPTURE')) {
+            if (!xml.includes('android.permission.ACCESS_MEDIA_LOCATION')) {
+              additions.push('    <uses-permission android:name=\"android.permission.ACCESS_MEDIA_LOCATION\" />');
+            }
+            if (!xml.includes('com.timestamper.timemark')) {
               additions.push(
-                '    <queries>\n        <intent>\n            <action android:name=\"android.media.action.IMAGE_CAPTURE\" />\n        </intent>\n    </queries>'
+                '    <queries>\n' +
+                '        <intent>\n' +
+                '            <action android:name=\"android.media.action.IMAGE_CAPTURE\" />\n' +
+                '        </intent>\n' +
+                '        <package android:name=\"com.timestamper.timemark\" />\n' +
+                '        <package android:name=\"com.jeyluta.timestampcamerafree\" />\n' +
+                '        <package android:name=\"com.jeyluta.timestampcamera\" />\n' +
+                '    </queries>'
               );
             }
 

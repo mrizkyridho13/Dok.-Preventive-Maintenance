@@ -1,9 +1,12 @@
 import React, { useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { AppLauncher } from '@capacitor/app-launcher';
+import { FilePicker } from '@capawesome/capacitor-file-picker';
 import {
   Camera,
   Image as ImageIcon,
+  Clock,
   Trash2,
   RefreshCw,
   ZoomIn,
@@ -27,6 +30,12 @@ interface PhotoBoxProps {
   onCopyToRight?: () => void;
 }
 
+const TIMEMARK_PACKAGES = [
+  'com.timestamper.timemark',
+  'com.jeyluta.timestampcamerafree',
+  'com.jeyluta.timestampcamera',
+];
+
 export const PhotoBox: React.FC<PhotoBoxProps> = ({
   type,
   boxNumber,
@@ -44,9 +53,9 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Fallback web input 1: capture="environment" -> memicu kamera di browser mobile
+  // Input 1 (web fallback): capture="environment" -> memicu kamera di browser mobile
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  // Fallback web input 2: Galeri foto biasa di browser
+  // Input 2 (web/WebView fallback): pemilih file lokal browser / Android WebView
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const effectiveFitMode: PhotoFitMode = photo?.fitMode || globalFitMode;
@@ -84,24 +93,18 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
     }
   };
 
-  const handleSelectPhotoSource = async (mode: 'camera' | 'gallery') => {
-    // Jika berjalan di browser web biasa, gunakan input file standar
+  const handleOpenCamera = async () => {
     if (!Capacitor.isNativePlatform()) {
-      if (mode === 'camera') {
-        cameraInputRef.current?.click();
-      } else {
-        galleryInputRef.current?.click();
-      }
+      cameraInputRef.current?.click();
       return;
     }
 
-    // Jika berjalan di Android Native (Capacitor APK), gunakan @capacitor/camera
     try {
       const captured = await CapacitorCamera.getPhoto({
         quality: 90,
         allowEditing: false,
         resultType: CameraResultType.DataUrl,
-        source: mode === 'camera' ? CameraSource.Camera : CameraSource.Photos,
+        source: CameraSource.Camera,
       });
 
       if (captured.dataUrl) {
@@ -110,8 +113,103 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!/cancel|dismiss|abort|no image/i.test(msg)) {
-        console.error('Native camera/gallery error:', err);
+        console.error('Native camera error:', err);
       }
+    }
+  };
+
+  const handleOpenTimemark = async () => {
+    if (Capacitor.isNativePlatform()) {
+      for (const pkg of TIMEMARK_PACKAGES) {
+        try {
+          const check = await AppLauncher.canOpenUrl({ url: pkg });
+          if (check.value) {
+            const launched = await AppLauncher.openUrl({ url: pkg });
+            if (launched.completed) {
+              return;
+            }
+          }
+        } catch {
+          // Coba paket aplikasi timestamp berikutnya
+        }
+      }
+
+      // Fallback langsung via openUrl jika package query dibatasi perangkat
+      for (const pkg of TIMEMARK_PACKAGES) {
+        try {
+          const launched = await AppLauncher.openUrl({ url: pkg });
+          if (launched.completed) {
+            return;
+          }
+        } catch {
+          // Lanjut ke fallback kamera sistem
+        }
+      }
+
+      // Jika Timemark/Timestamp Camera belum terinstal, buka kamera standar
+      await handleOpenCamera();
+      return;
+    }
+
+    // Di browser Android (Chrome), picu intent Android untuk Timemark -> fallback Timestamp Camera Free
+    const isAndroidBrowser =
+      typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    if (isAndroidBrowser) {
+      const fallbackTimestamp = encodeURIComponent(
+        'intent://#Intent;package=com.jeyluta.timestampcamerafree;end'
+      );
+      const intentLink = document.createElement('a');
+      intentLink.href = `intent://#Intent;package=com.timestamper.timemark;S.browser_fallback_url=${fallbackTimestamp};end`;
+      intentLink.style.display = 'none';
+      document.body.appendChild(intentLink);
+      intentLink.click();
+      document.body.removeChild(intentLink);
+      return;
+    }
+
+    // Di desktop browser, gunakan input kamera/file standar
+    cameraInputRef.current?.click();
+  };
+
+  const handlePickFromLocalGallery = async () => {
+    // Browser web biasa memakai <input type="file" accept="image/*" />
+    if (!Capacitor.isNativePlatform()) {
+      galleryInputRef.current?.click();
+      return;
+    }
+
+    // Android Native (APK): gunakan FilePicker.pickFiles (ACTION_GET_CONTENT)
+    // agar membuka pemilih file/folder lokal (Files/Galeri HP) yang mengingat folder terakhir (mis. Timemark/DCIM)
+    try {
+      const result = await FilePicker.pickFiles({
+        types: ['image/*'],
+        limit: 1,
+        readData: true,
+      });
+
+      const picked = result.files?.[0];
+      if (!picked) return;
+
+      if (picked.blob) {
+        await saveCompressedPhoto(picked.blob);
+      } else if (picked.data) {
+        const mimeType = picked.mimeType || 'image/jpeg';
+        const dataUrl = picked.data.startsWith('data:')
+          ? picked.data
+          : `data:${mimeType};base64,${picked.data}`;
+        await saveCompressedPhoto(dataUrl);
+      } else if (picked.webPath) {
+        const response = await fetch(picked.webPath);
+        const blob = await response.blob();
+        await saveCompressedPhoto(blob);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/cancel|dismiss|abort/i.test(msg)) {
+        return;
+      }
+      console.error('Local file picker error, falling back to input:', err);
+      galleryInputRef.current?.click();
     }
   };
 
@@ -147,9 +245,9 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
 
   return (
     <div className="flex flex-col w-full bg-white border border-black shadow-2xs min-w-0">
-      {/* Hidden file inputs (cadangan saat dibuka via browser web biasa):
-          1) cameraInputRef (capture=environment)
-          2) galleryInputRef (galeri web) */}
+      {/* Hidden file inputs:
+          1) cameraInputRef (capture=environment) cadangan kamera browser web
+          2) galleryInputRef (<input type="file" accept="image/*" />) cadangan galeri/file lokal */}
       <input
         type="file"
         ref={cameraInputRef}
@@ -200,36 +298,50 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
               loading="lazy"
             />
           ) : (
-            /* Empty Box: 2 Opsi Manual — BUKA KAMERA (native app chooser) dan Dari Galeri */
-            <div className="w-full h-full p-1.5 sm:p-2 md:p-3 flex flex-col justify-center items-stretch gap-1.5 sm:gap-2 bg-slate-900 text-white">
+            /* Empty Box: BUKA KAMERA, pendamping Buka Timemark, dan Dari Galeri (File/Folder Lokal) */
+            <div className="w-full h-full p-1.5 sm:p-2 md:p-2.5 flex flex-col justify-center items-stretch gap-1 sm:gap-1.5 bg-slate-900 text-white">
               {/* Tombol 1: BUKA KAMERA */}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  void handleSelectPhotoSource('camera');
+                  void handleOpenCamera();
                 }}
-                title="Buka kamera HP atau aplikasi kamera (Timemark, Timestamp, dll)"
-                className="w-full py-1.5 sm:py-2 px-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 border border-slate-500 transition active:scale-98"
+                title="Buka kamera HP"
+                className="w-full py-1 sm:py-1.5 px-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 border border-slate-500 transition active:scale-98"
               >
-                <Camera className="w-4 h-4 shrink-0 text-white" />
-                <span className="text-[11px] sm:text-xs uppercase truncate">
+                <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-white" />
+                <span className="text-[10px] sm:text-xs uppercase truncate">
                   BUKA KAMERA
                 </span>
               </button>
 
-              {/* Tombol 2: Dari Galeri */}
+              {/* Tombol Pendamping: Buka Timemark / Timestamp Camera */}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  void handleSelectPhotoSource('gallery');
+                  void handleOpenTimemark();
                 }}
-                title="Ambil foto dari Galeri lokal HP"
-                className="w-full py-1.5 sm:py-2 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-semibold rounded-xs flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-98"
+                title="Buka aplikasi Timemark / Timestamp Camera lalu ambil hasilnya lewat Dari Galeri"
+                className="w-full py-1 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-amber-300 font-semibold rounded-xs flex items-center justify-center gap-1 border border-amber-500/40 transition active:scale-98"
+              >
+                <Clock className="w-3 h-3 shrink-0 text-amber-300" />
+                <span className="text-[10px] sm:text-[11px] truncate">Buka Timemark</span>
+              </button>
+
+              {/* Tombol 2: Dari Galeri (File/Folder Picker Lokal) */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handlePickFromLocalGallery();
+                }}
+                title="Ambil foto dari folder lokal HP (Timemark/DCIM - ingat folder terakhir)"
+                className="w-full py-1 sm:py-1.5 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-semibold rounded-xs flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-98"
               >
                 <ImageIcon className="w-3.5 h-3.5 shrink-0 text-slate-300" />
-                <span className="text-[11px] sm:text-xs truncate">Dari Galeri</span>
+                <span className="text-[10px] sm:text-xs truncate">Dari Galeri</span>
               </button>
             </div>
           )}
@@ -406,7 +518,7 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
                 type="button"
                 onClick={() => {
                   setShowActionMenu(false);
-                  void handleSelectPhotoSource('camera');
+                  void handleOpenCamera();
                 }}
                 className="w-full py-2 px-2 bg-slate-800 hover:bg-slate-900 text-white font-bold border border-black text-xs flex items-center justify-center gap-1.5"
               >
@@ -418,7 +530,19 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
                 type="button"
                 onClick={() => {
                   setShowActionMenu(false);
-                  void handleSelectPhotoSource('gallery');
+                  void handleOpenTimemark();
+                }}
+                className="w-full py-2 px-2 bg-slate-900 hover:bg-slate-800 text-amber-300 font-semibold border border-black text-xs flex items-center justify-center gap-1.5"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                Buka Timemark / Timestamp
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowActionMenu(false);
+                  void handlePickFromLocalGallery();
                 }}
                 className="w-full py-2 px-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold border border-black text-xs flex items-center justify-center gap-1.5"
               >
