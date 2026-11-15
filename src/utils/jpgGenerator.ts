@@ -2,13 +2,9 @@ import { Sheet, ReportMeta } from '../types/report';
 import { COMPANY_LOGO_BASE64, COMPANY_NAME } from './logoData';
 
 /**
- * Generates a high-resolution A4 portrait JPG (2480 x 3508 px, 300 DPI)
- * matching the official PT. Panca Gatrik Elektrindo PDF layout:
- * - Crisp vector-like borders, typography, and high-quality image smoothing.
- * - Pure white background inside photo frames with aspect-fit (uncropped timestamps).
- * - Adaptive text sizing/wrapping for header metadata and photo captions.
- * - Sequential box numbering (1..6 on sheet 1, 7..12 on sheet 2, etc.).
- * - Safe margins ensuring Row 3 and footer never collide with borders.
+ * Generates a lightweight A4 portrait JPG (1240 x 1754 px, ~150 DPI Smart Scale)
+ * targeting ~150KB-250KB per page while preserving crisp borders, typography,
+ * timestamps, and equipment details matching the official PT. PGE layout.
  */
 export async function generateSheetJPG(
   sheet: Sheet,
@@ -16,15 +12,18 @@ export async function generateSheetJPG(
   totalPages: number
 ): Promise<Blob> {
   const canvas = document.createElement('canvas');
-  // High-res A4 portrait (300 DPI): 2480 x 3508
+  // Smart Scale A4 portrait (150 DPI): 1240 x 1754 (exact 0.5x of 2480 x 3508)
+  const targetWidth = 1240;
+  const targetHeight = 1754;
   const width = 2480;
   const height = 3508;
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not create canvas context');
 
+  ctx.scale(targetWidth / width, targetHeight / height);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
@@ -238,16 +237,20 @@ export async function generateSheetJPG(
   ctx.fillStyle = '#0f172a';
   ctx.fillText(`Lembar ${sheet.sheetNumber} dari ${totalPages}`, marginX + usableWidth, footerTextY);
 
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error('Failed to generate JPG blob'));
-      },
-      'image/jpeg',
-      0.92
-    );
-  });
+  const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.78);
+  return dataUrlToBlob(jpegDataUrl);
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const parts = dataUrl.split(',');
+  const mimeMatch = parts[0]?.match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const binary = atob(parts[1] || '');
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
 }
 
 async function renderCanvasSlot(

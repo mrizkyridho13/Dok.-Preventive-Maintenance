@@ -280,7 +280,7 @@ const mediaHelpers = `
                 call.reject("Media file not found", EC_FS_ERROR);
                 return;
             }
-            String base64 = encodeThumbnailBase64(identifier, 1600, 1600, 90);
+            String base64 = encodeThumbnailBase64(identifier, 1000, 1000, 80);
             JSObject result = new JSObject();
             result.put("identifier", identifier);
             result.put("path", identifier);

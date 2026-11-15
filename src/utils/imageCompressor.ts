@@ -1,9 +1,8 @@
 /**
  * Image compressor for field technicians
- * Resizes images to max 1440px on longest side with 86% JPEG quality
- * to keep timestamps and equipment details sharp in JPG/PDF/Word exports
- * while maintaining smooth offline performance.
- * Accepts both File/Blob (web input) and DataUrl string (Capacitor Camera).
+ * Automatically resizes large camera photos (e.g. 4000px) to max 1000px on longest side
+ * with 0.8 JPEG quality so RAM stays light even with 50-100 photos per day,
+ * while keeping timestamps and equipment details sharp across JPG/PDF/Word exports.
  */
 async function readInputAsDataUrl(input: File | Blob | string): Promise<string> {
   if (typeof input === 'string') {
@@ -25,23 +24,23 @@ async function readInputAsDataUrl(input: File | Blob | string): Promise<string> 
   });
 }
 
-export async function compressImage(input: File | Blob | string): Promise<string> {
-  const sourceDataUrl = await readInputAsDataUrl(input);
-
+export async function optimizeJpegForExport(
+  sourceDataUrl: string,
+  maxDimension: number = 1000,
+  quality: number = 0.8
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       try {
-        const MAX_DIMENSION = 1440;
         let width = img.naturalWidth || img.width;
         let height = img.naturalHeight || img.height;
 
-        // Scale down proportionally if either dimension exceeds MAX_DIMENSION
         const longestSide = Math.max(width, height);
-        if (longestSide > MAX_DIMENSION) {
-          const ratio = MAX_DIMENSION / longestSide;
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
+        if (longestSide > maxDimension) {
+          const ratio = maxDimension / longestSide;
+          width = Math.max(1, Math.round(width * ratio));
+          height = Math.max(1, Math.round(height * ratio));
         }
 
         const canvas = document.createElement('canvas');
@@ -61,8 +60,7 @@ export async function compressImage(input: File | Blob | string): Promise<string
 
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Compress to JPEG with 86% quality for crisp timestamps
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.86);
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
         resolve(compressedDataUrl);
       } catch (err) {
         console.error('Canvas compression error:', err);
@@ -76,4 +74,10 @@ export async function compressImage(input: File | Blob | string): Promise<string
 
     img.src = sourceDataUrl;
   });
+}
+
+export async function compressImage(input: File | Blob | string): Promise<string> {
+  const sourceDataUrl = await readInputAsDataUrl(input);
+  // Resize input photos to max 1000px with 0.8 JPEG quality
+  return optimizeJpegForExport(sourceDataUrl, 1000, 0.8);
 }

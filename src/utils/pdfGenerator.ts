@@ -1,25 +1,23 @@
 import jsPDF from 'jspdf';
 import { Sheet, ReportMeta } from '../types/report';
 import { COMPANY_LOGO_BASE64, COMPANY_NAME } from './logoData';
+import { optimizeJpegForExport } from './imageCompressor';
 
 /**
  * Generates an official multi-page A4 technical report PDF.
- * Finalized according to PT. Panca Gatrik Elektrindo official requirements:
- * - Official PT logo in the top header.
- * - Pure white background inside photo frames with preserved aspect ratio (no stretching/cropping).
- * - Balanced photo boxes (87mm x 70mm) for clear photo display.
- * - Sequential box numbering (1..6 on page 1, 7..12 on page 2).
- * - Adaptive text fitting for metadata and captions, zero footer collision.
+ * Optimized for lightweight ~200KB/page output while preserving crisp vector text,
+ * official borders, PT logo, and sharp photo/timestamp readability.
  */
 export async function generateReportPDF(
   sheets: Sheet[],
   meta: ReportMeta
 ): Promise<Blob> {
-  // A4 portrait dimensions in mm: 210 x 297
+  // A4 portrait dimensions in mm: 210 x 297 with internal stream compression enabled
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
     format: 'a4',
+    compress: true,
   });
 
   const totalPages = sheets.length;
@@ -67,7 +65,7 @@ async function renderPDFPage(
 
   // Embed Company Logo at Top-Left
   try {
-    doc.addImage(COMPANY_LOGO_BASE64, 'JPEG', marginLeft + 2, curY + 1.25, 11, 11);
+    doc.addImage(COMPANY_LOGO_BASE64, 'JPEG', marginLeft + 2, curY + 1.25, 11, 11, undefined, 'MEDIUM');
   } catch (e) {
     console.warn('Failed to embed logo into PDF:', e);
   }
@@ -266,12 +264,15 @@ async function renderSlotPDF(
 
   if (photoDataUrl) {
     try {
+      // Ensure photo is strictly JPEG at 0.78 quality & max 760px (~25-35KB per photo)
+      const optimizedJpeg = await optimizeJpegForExport(photoDataUrl, 760, 0.78);
+
       if (fitMode === 'fill') {
         // Sesuaikan dengan kotak (mengisi penuh kolom tanpa ruang putih & tanpa memotong timestamp)
-        doc.addImage(photoDataUrl, 'JPEG', colX, curY, photoW, photoH, undefined, 'FAST');
+        doc.addImage(optimizedJpeg, 'JPEG', colX, curY, photoW, photoH, undefined, 'MEDIUM');
       } else {
         // Sesuai aslinya (aspect-fit di tengah)
-        const dims = await getImageDimensions(photoDataUrl);
+        const dims = await getImageDimensions(optimizedJpeg);
         const innerPad = 0.4;
         const availW = photoW - innerPad * 2;
         const availH = photoH - innerPad * 2;
@@ -281,7 +282,7 @@ async function renderSlotPDF(
         const drawX = colX + (photoW - drawW) / 2;
         const drawY = curY + (photoH - drawH) / 2;
 
-        doc.addImage(photoDataUrl, 'JPEG', drawX, drawY, drawW, drawH, undefined, 'FAST');
+        doc.addImage(optimizedJpeg, 'JPEG', drawX, drawY, drawW, drawH, undefined, 'MEDIUM');
       }
     } catch (e) {
       console.error('Failed to add image to PDF:', e);

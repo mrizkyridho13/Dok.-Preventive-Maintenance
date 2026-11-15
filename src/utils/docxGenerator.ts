@@ -17,6 +17,7 @@ import {
 } from 'docx';
 import { Sheet, ReportMeta, PhotoFitMode } from '../types/report';
 import { COMPANY_LOGO_BASE64, COMPANY_NAME } from './logoData';
+import { optimizeJpegForExport } from './imageCompressor';
 
 /**
  * Generates an editable Microsoft Word (.docx) document formatted cleanly
@@ -451,7 +452,14 @@ async function buildPhotoCell(
     });
   }
 
-  const bytes = dataUrlToUint8Array(photoDataUrl);
+  let optimizedJpeg = photoDataUrl;
+  try {
+    optimizedJpeg = await optimizeJpegForExport(photoDataUrl, 680, 0.75);
+  } catch {
+    optimizedJpeg = photoDataUrl;
+  }
+
+  const bytes = dataUrlToUint8Array(optimizedJpeg);
   if (!bytes) {
     return new TableCell({
       columnSpan: 2,
@@ -472,7 +480,7 @@ async function buildPhotoCell(
 
   if (fitMode === 'original') {
     try {
-      const dims = await getImageDimensions(photoDataUrl);
+      const dims = await getImageDimensions(optimizedJpeg);
       const scale = Math.min(maxPxW / dims.width, maxPxH / dims.height);
       drawW = Math.max(20, Math.round(dims.width * scale));
       drawH = Math.max(20, Math.round(dims.height * scale));
