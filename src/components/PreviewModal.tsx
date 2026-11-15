@@ -8,6 +8,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { Sheet, ReportMeta } from '../types/report';
+import { useBackHandler } from '../hooks/useAndroidBackButton';
 
 interface PreviewModalProps {
   isOpen: boolean;
@@ -39,6 +40,8 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
       setCurrentSheetIdx(Math.min(initialIndex, Math.max(0, sheets.length - 1)));
     }
   }, [isOpen, initialIndex, sheets.length]);
+
+  useBackHandler(isOpen, onClose, 40);
 
   if (!isOpen) return null;
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { FileDown, FileText, Image as ImageIcon, Share2, X } from 'lucide-react';
+import { useBackHandler } from '../hooks/useAndroidBackButton';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -16,6 +17,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   onShareFormat,
   onClose,
 }) => {
+  useBackHandler(isOpen, onClose, 45);
+
   if (!isOpen) return null;
 
   return (

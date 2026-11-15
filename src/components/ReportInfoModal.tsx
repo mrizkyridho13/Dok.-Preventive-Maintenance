@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Building2, User, Calendar, FileText, Check } from 'lucide-react';
 import { ReportMeta, DateMode } from '../types/report';
+import { useBackHandler } from '../hooks/useAndroidBackButton';
 
 const MONTH_NAMES_ID = [
   'Januari',
@@ -68,6 +69,8 @@ export const ReportInfoModal: React.FC<ReportInfoModalProps> = ({
       });
     }
   }, [isOpen, meta]);
+
+  useBackHandler(isOpen, onClose, 40);
 
   if (!isOpen) return null;
 

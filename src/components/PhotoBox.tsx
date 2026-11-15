@@ -16,7 +16,8 @@ import {
   Minimize2,
 } from 'lucide-react';
 import { PhotoItem, PhotoFitMode } from '../types/report';
-import { compressImage } from '../utils/imageCompressor';
+import { processAndCompressImage } from '../utils/imageCompressor';
+import { useBackHandler } from '../hooks/useAndroidBackButton';
 import { LocalGalleryModal } from './LocalGalleryModal';
 
 interface PhotoBoxProps {
@@ -62,6 +63,9 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   // Input 2 (web/WebView fallback): pemilih file lokal browser / Android WebView
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
+  useBackHandler(showActionMenu && Boolean(photo), () => setShowActionMenu(false), 55);
+  useBackHandler(showFullView && Boolean(photo), () => setShowFullView(false), 65);
+
   const effectiveFitMode: PhotoFitMode = photo?.fitMode || globalFitMode;
 
   const saveCompressedPhoto = async (source: File | Blob | string) => {
@@ -70,7 +74,7 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate(25);
       }
-      const compressedDataUrl = await compressImage(source);
+      const compressedDataUrl = await processAndCompressImage(source);
       onUpdatePhoto({
         id: `p-${Date.now()}`,
         dataUrl: compressedDataUrl,

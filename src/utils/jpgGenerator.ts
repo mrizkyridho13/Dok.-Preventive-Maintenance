@@ -238,6 +238,8 @@ export async function generateSheetJPG(
   ctx.fillText(`Lembar ${sheet.sheetNumber} dari ${totalPages}`, marginX + usableWidth, footerTextY);
 
   const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.78);
+  canvas.width = 0;
+  canvas.height = 0;
   return dataUrlToBlob(jpegDataUrl);
 }
 

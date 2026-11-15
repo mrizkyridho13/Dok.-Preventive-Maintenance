@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
 } from 'lucide-react';
 import { getThumbnailSrc, loadAndCompressMediaAsset } from '../utils/mediaLoader';
+import { useBackHandler } from '../hooks/useAndroidBackButton';
 
 export const LAST_ALBUM_STORAGE_KEY = 'docutek_last_album_identifier';
 const CACHED_ALBUMS_SESSION_KEY = 'docutek_cached_albums_v1';
@@ -169,8 +170,16 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
     }
   };
 
+  useBackHandler(isOpen, onClose, 60);
+  useBackHandler(isOpen && Boolean(previewAsset), () => setPreviewAsset(null), 70);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setPreviewAsset(null);
+      setPhotos([]);
+      setHasMore(false);
+      return;
+    }
     setPreviewAsset(null);
     const savedAlbum = (() => {
       try {

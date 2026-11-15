@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { Media, MediaAsset } from '@capacitor-community/media';
-import { compressImage } from './imageCompressor';
+import { processAndCompressImage } from './imageCompressor';
 
 export function getThumbnailSrc(asset: MediaAsset): string {
   if (asset.data) {
@@ -16,7 +16,7 @@ export function getThumbnailSrc(asset: MediaAsset): string {
 
 /**
  * Resolves full-resolution image data from a native MediaAsset identifier
- * and compresses it to standard app resolution (max 1440px, 86% JPEG).
+ * and passes it through centralized processAndCompressImage() (max 1000px, 0.8 JPEG).
  */
 export async function loadAndCompressMediaAsset(asset: MediaAsset): Promise<string> {
   // 1. Try reading full file via Capacitor's local file server bridge
@@ -27,7 +27,7 @@ export async function loadAndCompressMediaAsset(asset: MediaAsset): Promise<stri
       if (response.ok) {
         const blob = await response.blob();
         if (blob.size > 0) {
-          return await compressImage(blob);
+          return await processAndCompressImage(blob);
         }
       }
     } catch {
@@ -44,7 +44,7 @@ export async function loadAndCompressMediaAsset(asset: MediaAsset): Promise<stri
         const fullDataUrl = resolved.data.startsWith('data:')
           ? resolved.data
           : `data:image/jpeg;base64,${resolved.data}`;
-        return await compressImage(fullDataUrl);
+        return await processAndCompressImage(fullDataUrl);
       }
 
       if (resolved?.path) {
@@ -52,7 +52,7 @@ export async function loadAndCompressMediaAsset(asset: MediaAsset): Promise<stri
         const res = await fetch(pathUrl);
         if (res.ok) {
           const blob = await res.blob();
-          return await compressImage(blob);
+          return await processAndCompressImage(blob);
         }
       }
     } catch {
@@ -65,7 +65,7 @@ export async function loadAndCompressMediaAsset(asset: MediaAsset): Promise<stri
     const fallbackUrl = asset.data.startsWith('data:')
       ? asset.data
       : `data:image/jpeg;base64,${asset.data}`;
-    return await compressImage(fallbackUrl);
+    return await processAndCompressImage(fallbackUrl);
   }
 
   throw new Error('Gagal memuat file gambar dari penyimpanan perangkat.');

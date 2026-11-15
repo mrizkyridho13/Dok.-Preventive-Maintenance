@@ -23,6 +23,8 @@ import {
 import { generateSheetJPG } from './utils/jpgGenerator';
 import { getThumbnailSrc, loadAndCompressMediaAsset } from './utils/mediaLoader';
 import { saveExportedFile, shareExportedFile } from './utils/nativeExport';
+import { handleTopBackAction } from './utils/backButtonManager';
+import { useBackHandler } from './hooks/useAndroidBackButton';
 import { Header } from './components/Header';
 import { SheetTabs } from './components/SheetTabs';
 import { SheetGrid } from './components/SheetGrid';
@@ -40,6 +42,7 @@ import {
   Camera,
   X,
   Share2,
+  LogOut,
 } from 'lucide-react';
 
 export default function App() {
@@ -60,6 +63,7 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
 
   // Auto-capture state (Timestamp / Timemark return detection)
   const [pendingAutoCapture, setPendingAutoCapture] = useState<{
@@ -69,8 +73,9 @@ export default function App() {
   } | null>(null);
   const [isApplyingAutoCapture, setIsApplyingAutoCapture] = useState(false);
 
-  // Debounced save ref & latest sheets ref
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Debounced save ref, toast timer ref & latest sheets ref
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sheetsRef = useRef<Sheet[]>(sheets);
   useEffect(() => {
     sheetsRef.current = sheets;
@@ -78,7 +83,14 @@ export default function App() {
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 2500);
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 2500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
   }, []);
 
   // 1. Initial Load from IndexedDB
@@ -226,6 +238,35 @@ export default function App() {
     };
   }, [checkRecentTimestampPhoto]);
 
+  // 3b. Android Hardware Back Button Handler & Clean Unmount Listener Cleanup
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let isMounted = true;
+    let backHandle: { remove: () => Promise<void> } | null = null;
+
+    void CapacitorApp.addListener('backButton', () => {
+      const closedTopModal = handleTopBackAction();
+      if (!closedTopModal) {
+        setIsExitConfirmOpen(true);
+      }
+    }).then((handle) => {
+      if (isMounted) {
+        backHandle = handle;
+      } else {
+        void handle.remove();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (backHandle) {
+        void backHandle.remove();
+      }
+      void CapacitorApp.removeAllListeners();
+    };
+  }, []);
+
   const handleConfirmAutoCapture = async () => {
     if (!pendingAutoCapture) return;
     try {
@@ -299,6 +340,8 @@ export default function App() {
     setPendingAutoCapture(null);
   };
 
+  useBackHandler(Boolean(pendingAutoCapture), handleDismissAutoCapture, 30);
+
   // Active Sheet safe getter
   const currentSheet = sheets[activeSheetIndex] || sheets[0];
 
@@ -361,7 +404,7 @@ export default function App() {
   // Handler: Add New Sheet (up to 35 sheets / 105 units)
   const handleAddSheet = () => {
     if (sheets.length >= 35) {
-      alert('Maksimal 35 lembar laporan tercapai (105 unit).');
+      showToast('Maksimal 35 lembar laporan tercapai (105 unit).');
       return;
     }
 
@@ -380,7 +423,7 @@ export default function App() {
   const handleConfirmDeleteSheet = () => {
     if (deleteConfirmIndex === null) return;
     if (sheets.length <= 1) {
-      alert('Minimal harus ada 1 lembar laporan.');
+      showToast('Minimal harus ada 1 lembar laporan.');
       return;
     }
 
@@ -801,6 +844,22 @@ export default function App() {
         isExporting={isExporting}
         onShareFormat={(fmt) => void handleShareFormat(fmt)}
         onClose={() => setIsShareModalOpen(false)}
+      />
+
+      {/* 6. Android Hardware Back Exit Confirmation Dialog */}
+      <ConfirmModal
+        isOpen={isExitConfirmOpen}
+        title="Keluar dari aplikasi PGE DocuTek?"
+        message="Pastikan laporan yang sedang dikerjakan sudah tersimpan atau diunduh."
+        cancelLabel="Tidak"
+        confirmLabel="Ya"
+        isDestructive={false}
+        backPriority={90}
+        icon={<LogOut className="w-4 h-4" />}
+        onConfirm={() => {
+          void CapacitorApp.exitApp();
+        }}
+        onClose={() => setIsExitConfirmOpen(false)}
       />
     </div>
   );
