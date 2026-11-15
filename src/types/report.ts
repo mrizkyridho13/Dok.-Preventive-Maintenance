@@ -1,4 +1,5 @@
 export type PhotoFitMode = 'original' | 'fill';
+export type DateMode = 'full' | 'month';
 
 export interface PhotoItem {
   id: string;
@@ -30,6 +31,7 @@ export interface ReportMeta {
   technicianName: string;
   location: string;
   date: string;
+  dateMode?: DateMode;
   jobOrderNumber: string;
   showBeforeAfterLabels: boolean;
   photoFitMode?: PhotoFitMode;
@@ -41,6 +43,7 @@ export const DEFAULT_META: ReportMeta = {
   technicianName: '',
   location: '',
   date: new Date().toISOString().split('T')[0],
+  dateMode: 'full',
   jobOrderNumber: '',
   showBeforeAfterLabels: true,
   photoFitMode: 'original',

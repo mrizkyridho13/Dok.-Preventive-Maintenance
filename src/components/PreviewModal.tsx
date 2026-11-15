@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { X, FileDown, Image as ImageIcon, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import {
+  FileDown,
+  FileText,
+  FileSpreadsheet,
+  Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+} from 'lucide-react';
 import { Sheet, ReportMeta } from '../types/report';
 
 interface PreviewModalProps {
@@ -10,6 +18,8 @@ interface PreviewModalProps {
   onClose: () => void;
   onDownloadPDF: () => void;
   onDownloadJPG: (sheetIndex: number) => void;
+  onDownloadDOCX: () => void;
+  onDownloadXLSX: () => void;
   isExporting: boolean;
 }
 
@@ -21,6 +31,8 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
   onClose,
   onDownloadPDF,
   onDownloadJPG,
+  onDownloadDOCX,
+  onDownloadXLSX,
   isExporting,
 }) => {
   const [currentSheetIdx, setCurrentSheetIdx] = useState(initialIndex);
@@ -222,26 +234,46 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         </div>
       </div>
 
-      {/* Bottom Action Buttons: Unduh Lembar Ini (JPG) & Unduh Semua (PDF) */}
-      <div className="w-full max-w-md md:max-w-2xl mx-auto bg-slate-900 text-white p-2 flex items-center justify-between gap-1.5 border border-slate-800">
+      {/* Bottom Action Buttons: JPG, PDF, Word, Excel */}
+      <div className="w-full max-w-md md:max-w-2xl mx-auto bg-slate-900 text-white p-2 grid grid-cols-2 sm:grid-cols-4 gap-1.5 border border-slate-800">
         <button
           type="button"
           disabled={isExporting}
           onClick={() => onDownloadJPG(currentSheetIdx)}
-          className="flex-1 py-2 px-2 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold text-xs flex items-center justify-center gap-1"
+          className="py-2 px-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white border border-slate-600 font-bold text-xs flex items-center justify-center gap-1"
         >
-          <ImageIcon className="w-3.5 h-3.5" />
-          <span>Unduh JPG ({currentSheetIdx + 1})</span>
+          <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+          <span>JPG ({currentSheetIdx + 1})</span>
         </button>
 
         <button
           type="button"
           disabled={isExporting}
           onClick={onDownloadPDF}
-          className="flex-1 py-2 px-2 bg-slate-100 hover:bg-white text-slate-950 border border-black font-extrabold text-xs flex items-center justify-center gap-1"
+          className="py-2 px-2 bg-slate-100 hover:bg-white disabled:opacity-40 text-slate-950 border border-black font-extrabold text-xs flex items-center justify-center gap-1"
         >
-          <FileDown className="w-3.5 h-3.5 stroke-[2.5]" />
-          <span>Unduh PDF Semua</span>
+          <FileDown className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
+          <span>PDF</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={isExporting}
+          onClick={onDownloadDOCX}
+          className="py-2 px-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 text-white border border-blue-900 font-bold text-xs flex items-center justify-center gap-1"
+        >
+          <FileText className="w-3.5 h-3.5 shrink-0" />
+          <span>Word</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={isExporting}
+          onClick={onDownloadXLSX}
+          className="py-2 px-2 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white border border-emerald-900 font-bold text-xs flex items-center justify-center gap-1"
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
+          <span>Excel</span>
         </button>
       </div>
     </div>

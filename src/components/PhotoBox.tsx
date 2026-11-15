@@ -9,6 +9,7 @@ import {
   Check,
   Maximize2,
   Minimize2,
+  Smartphone,
 } from 'lucide-react';
 import { PhotoItem, PhotoFitMode } from '../types/report';
 import { compressImage } from '../utils/imageCompressor';
@@ -42,7 +43,11 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Input 1: Tanpa atribut capture -> di HP/APK membuka chooser aplikasi (Kamera Timestamp, Open Camera, Kamera Bawaan, File)
+  const appChooserInputRef = useRef<HTMLInputElement>(null);
+  // Input 2: capture="environment" -> langsung kamera belakang bawaan HP
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  // Input 3: Galeri foto
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const effectiveFitMode: PhotoFitMode = photo?.fitMode || globalFitMode;
@@ -105,7 +110,17 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
 
   return (
     <div className="flex flex-col w-full bg-white border border-black shadow-2xs min-w-0">
-      {/* Hidden file inputs for direct camera (environment) and gallery */}
+      {/* Hidden file inputs:
+          1) appChooserInputRef (no capture) lets Android/APK pick Timestamp Camera / external camera app
+          2) cameraInputRef (capture=environment) launches default rear camera directly
+          3) galleryInputRef picks existing photo from gallery */}
+      <input
+        type="file"
+        ref={appChooserInputRef}
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
       <input
         type="file"
         ref={cameraInputRef}
@@ -122,14 +137,14 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
         onChange={handleFileChange}
       />
 
-      {/* 1. BEFORE / AFTER Label: Formal & Minimalis */}
+      {/* 1. BEFORE / AFTER Label */}
       {showLabel && (
         <div className="py-0.5 px-1.5 text-center text-[10px] sm:text-[11px] font-bold tracking-wider uppercase border-b border-black bg-slate-800 text-white select-none">
           {isBefore ? 'BEFORE' : 'AFTER'}
         </div>
       )}
 
-      {/* 2. Photo Slot Box: Proporsi Pas A4 (aspect-[87/70], background putih bersih) */}
+      {/* 2. Photo Slot Box (100% bersih tanpa overlay menutupi foto/timestamp) */}
       <div className="p-0.5 sm:p-1 bg-white">
         <div
           className="relative w-full aspect-[87/70] bg-white border border-black overflow-hidden flex flex-col items-center justify-center select-none"
@@ -146,79 +161,106 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
               <span className="text-[10px] text-slate-600">Mengompres foto...</span>
             </div>
           ) : photo ? (
-            <>
-              {/* Photo Display: object-fill (sesuaikan kotak) atau object-contain (sesuai aslinya) */}
-              <img
-                src={photo.dataUrl}
-                alt={`Foto #${boxNumber}`}
-                className={`w-full h-full cursor-pointer ${
-                  effectiveFitMode === 'fill' ? 'object-fill' : 'object-contain'
-                }`}
-                loading="lazy"
-              />
-
-              {/* Bottom bar: tap to replace + 1-tap fit mode switch */}
-              <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 px-1 py-0.5 flex items-center justify-between gap-1 cursor-pointer">
-                <span className="text-[9px] md:text-[10px] text-white flex items-center gap-1 font-medium truncate">
-                  <RefreshCw className="w-2.5 h-2.5 shrink-0" />
-                  <span className="truncate">Ganti / Opsi</span>
+            /* Photo Display: ZERO overlay so bottom timestamps remain 100% visible */
+            <img
+              src={photo.dataUrl}
+              alt={`Foto #${boxNumber}`}
+              className={`w-full h-full cursor-pointer ${
+                effectiveFitMode === 'fill' ? 'object-fill' : 'object-contain'
+              }`}
+              loading="lazy"
+            />
+          ) : (
+            /* Empty Box: Manual buttons for App Chooser (Timestamp Camera), Direct Camera, and Gallery */
+            <div className="w-full h-full p-1.5 sm:p-2 md:p-3 flex flex-col justify-center items-stretch gap-1 sm:gap-1.5 bg-slate-900 text-white">
+              {/* Tombol 1: Buka Kamera / Pilih Apk (Bisa pilih Timestamp Camera / Kamera Luar) */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  appChooserInputRef.current?.click();
+                }}
+                title="Buka pilihan aplikasi kamera (Kamera Timestamp / Kamera luar / File)"
+                className="w-full py-1.5 sm:py-2 px-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white font-bold rounded-xs flex items-center justify-center gap-1 border border-slate-500 transition active:scale-98"
+              >
+                <Smartphone className="w-3.5 h-3.5 shrink-0 text-amber-300" />
+                <span className="text-[10px] sm:text-xs uppercase truncate">
+                  Pilih Kamera / App
                 </span>
+              </button>
+
+              {/* Baris 2: Kamera HP langsung & Galeri */}
+              <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
                 <button
                   type="button"
-                  onClick={handleQuickToggleFitMode}
-                  title="Ubah tampilan foto: Isi Kotak atau Sesuai Aslinya"
-                  className={`shrink-0 px-1.5 py-0.5 text-[9px] font-bold border flex items-center gap-0.5 transition active:scale-95 ${
-                    effectiveFitMode === 'fill'
-                      ? 'bg-amber-400 text-slate-950 border-amber-200'
-                      : 'bg-slate-800 text-white border-slate-500 hover:bg-slate-700'
-                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    cameraInputRef.current?.click();
+                  }}
+                  title="Langsung buka kamera bawaan HP"
+                  className="py-1.5 px-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-100 font-semibold rounded-xs flex items-center justify-center gap-1 border border-slate-600 transition active:scale-98"
                 >
-                  {effectiveFitMode === 'fill' ? (
-                    <>
-                      <Maximize2 className="w-2.5 h-2.5" />
-                      <span>Isi Kotak</span>
-                    </>
-                  ) : (
-                    <>
-                      <Minimize2 className="w-2.5 h-2.5" />
-                      <span>Asli</span>
-                    </>
-                  )}
+                  <Camera className="w-3.5 h-3.5 shrink-0 text-white" />
+                  <span className="text-[10px] sm:text-xs truncate">Kamera HP</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    galleryInputRef.current?.click();
+                  }}
+                  title="Ambil foto dari Galeri HP"
+                  className="py-1.5 px-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-semibold rounded-xs flex items-center justify-center gap-1 border border-slate-700 transition active:scale-98"
+                >
+                  <ImageIcon className="w-3.5 h-3.5 shrink-0 text-slate-300" />
+                  <span className="text-[10px] sm:text-xs truncate">Galeri</span>
                 </button>
               </div>
-            </>
-          ) : (
-            /* Empty Box: Tombol Manual Kamera & Galeri */
-            <div className="w-full h-full p-1.5 sm:p-2 md:p-3 flex flex-col justify-center items-stretch gap-1.5 sm:gap-2 bg-slate-900 text-white">
-              {/* Tombol 1: Buka Kamera Belakang */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  cameraInputRef.current?.click();
-                }}
-                className="w-full py-1.5 sm:py-2 px-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 border border-slate-500 transition active:scale-98"
-              >
-                <Camera className="w-4 h-4 shrink-0 text-white" />
-                <span className="text-xs uppercase">Buka Kamera</span>
-              </button>
-
-              {/* Tombol 2: Pilih dari Galeri */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  galleryInputRef.current?.click();
-                }}
-                className="w-full py-1.5 sm:py-2 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-semibold rounded-xs flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-98"
-              >
-                <ImageIcon className="w-3.5 h-3.5 shrink-0 text-slate-300" />
-                <span className="text-xs">Dari Galeri</span>
-              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* 2b. Kontrol Foto di LUAR Kotak Foto (tidak menutupi foto & timestamp!) */}
+      {photo && !isProcessing && (
+        <div className="px-1 py-1 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-1 select-none">
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmDelete(false);
+              setShowActionMenu(true);
+            }}
+            className="px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:text-black bg-white hover:bg-slate-100 border border-slate-300 flex items-center gap-1 truncate"
+          >
+            <RefreshCw className="w-2.5 h-2.5 shrink-0" />
+            <span className="truncate">Ganti / Opsi</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleQuickToggleFitMode}
+            title="Ubah tampilan foto: Isi Kotak atau Sesuai Aslinya"
+            className={`shrink-0 px-1.5 py-0.5 text-[10px] font-bold border flex items-center gap-0.5 transition active:scale-95 ${
+              effectiveFitMode === 'fill'
+                ? 'bg-slate-900 text-amber-300 border-black'
+                : 'bg-white text-slate-800 border-slate-400 hover:bg-slate-100'
+            }`}
+          >
+            {effectiveFitMode === 'fill' ? (
+              <>
+                <Maximize2 className="w-2.5 h-2.5" />
+                <span>Isi Kotak</span>
+              </>
+            ) : (
+              <>
+                <Minimize2 className="w-2.5 h-2.5" />
+                <span>Asli</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* 3. Kotak Nomor Urut Otomatis & Input Teks Keterangan */}
       <div className="border-t border-black bg-white">
@@ -267,14 +309,14 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
         </div>
       </div>
 
-      {/* Modal / Dialog Opsi Foto (Resolusi Tampilan / Ganti / Hapus / Zoom) */}
+      {/* Modal / Dialog Opsi Foto (Resolusi Tampilan / Ganti via App/Kamera/Galeri / Hapus / Zoom) */}
       {showActionMenu && photo && (
         <div
           className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3"
           onClick={() => setShowActionMenu(false)}
         >
           <div
-            className="w-full max-w-xs sm:max-w-sm bg-white border-2 border-black p-3.5 space-y-2.5 animate-in fade-in zoom-in-95"
+            className="w-full max-w-xs sm:max-w-sm bg-white border-2 border-black p-3.5 space-y-2.5 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-1.5 border-b border-slate-300">
@@ -350,25 +392,39 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
                 type="button"
                 onClick={() => {
                   setShowActionMenu(false);
-                  cameraInputRef.current?.click();
+                  appChooserInputRef.current?.click();
                 }}
                 className="w-full py-2 px-2 bg-slate-800 hover:bg-slate-900 text-white font-bold border border-black text-xs flex items-center justify-center gap-1.5"
               >
-                <Camera className="w-3.5 h-3.5" />
-                Ganti Foto (Buka Kamera)
+                <Smartphone className="w-3.5 h-3.5 text-amber-300" />
+                Ganti Foto (Pilih App / Timestamp)
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowActionMenu(false);
-                  galleryInputRef.current?.click();
-                }}
-                className="w-full py-2 px-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold border border-black text-xs flex items-center justify-center gap-1.5"
-              >
-                <ImageIcon className="w-3.5 h-3.5" />
-                Ganti Foto (Dari Galeri)
-              </button>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowActionMenu(false);
+                    cameraInputRef.current?.click();
+                  }}
+                  className="py-2 px-2 bg-slate-700 hover:bg-slate-800 text-white font-semibold border border-black text-xs flex items-center justify-center gap-1"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Kamera HP</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowActionMenu(false);
+                    galleryInputRef.current?.click();
+                  }}
+                  className="py-2 px-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold border border-black text-xs flex items-center justify-center gap-1"
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>Dari Galeri</span>
+                </button>
+              </div>
 
               {!confirmDelete ? (
                 <button

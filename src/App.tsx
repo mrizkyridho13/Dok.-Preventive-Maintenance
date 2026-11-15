@@ -17,7 +17,6 @@ import {
   createEmptySheet,
   renumberSheets,
 } from './utils/db';
-import { generateReportPDF } from './utils/pdfGenerator';
 import { generateSheetJPG } from './utils/jpgGenerator';
 import { Header } from './components/Header';
 import { SheetTabs } from './components/SheetTabs';
@@ -28,10 +27,11 @@ import { ConfirmModal } from './components/ConfirmModal';
 import {
   Plus,
   FileDown,
+  FileText,
+  FileSpreadsheet,
   Image as ImageIcon,
   Eye,
   CheckCircle,
-  Building,
 } from 'lucide-react';
 
 export default function App() {
@@ -215,6 +215,7 @@ export default function App() {
     try {
       setIsExporting(true);
       showToast('Menyiapkan file PDF A4...');
+      const { generateReportPDF } = await import('./utils/pdfGenerator');
       const blob = await generateReportPDF(sheets, meta);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -229,7 +230,7 @@ export default function App() {
       showToast('Unduh PDF selesai');
     } catch (err) {
       console.error('PDF export error:', err);
-      alert('Gagal menghasilkan dokumen PDF. Silakan coba lagi.');
+      showToast('Gagal menghasilkan dokumen PDF. Silakan coba lagi.');
     } finally {
       setIsExporting(false);
     }
@@ -255,7 +256,59 @@ export default function App() {
       showToast(`JPG Lembar ${targetSheet.sheetNumber} selesai diunduh`);
     } catch (err) {
       console.error('JPG export error:', err);
-      alert('Gagal menghasilkan file gambar JPG. Silakan coba lagi.');
+      showToast('Gagal menghasilkan file JPG. Silakan coba lagi.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Handler: Download All Sheets as Editable Word (.docx)
+  const handleDownloadDOCX = async () => {
+    try {
+      setIsExporting(true);
+      showToast('Menyiapkan dokumen Word (.docx)...');
+      const { generateReportDOCX } = await import('./utils/docxGenerator');
+      const blob = await generateReportDOCX(sheets, meta);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const cleanLoc = (meta.location || 'Teknisi').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanDate = (meta.date || 'Laporan').replace(/[^a-zA-Z0-9_-]/g, '_');
+      a.href = url;
+      a.download = `Laporan_Maintenance_${cleanLoc}_${cleanDate}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Unduh Word (.docx) selesai');
+    } catch (err) {
+      console.error('DOCX export error:', err);
+      showToast('Gagal menghasilkan file Word. Silakan coba lagi.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Handler: Download All Sheets as Editable Excel (.xlsx)
+  const handleDownloadXLSX = async () => {
+    try {
+      setIsExporting(true);
+      showToast('Menyiapkan workbook Excel (.xlsx)...');
+      const { generateReportXLSX } = await import('./utils/xlsxGenerator');
+      const blob = await generateReportXLSX(sheets, meta);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const cleanLoc = (meta.location || 'Teknisi').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanDate = (meta.date || 'Laporan').replace(/[^a-zA-Z0-9_-]/g, '_');
+      a.href = url;
+      a.download = `Laporan_Maintenance_${cleanLoc}_${cleanDate}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Unduh Excel (.xlsx) selesai');
+    } catch (err) {
+      console.error('XLSX export error:', err);
+      showToast('Gagal menghasilkan file Excel. Silakan coba lagi.');
     } finally {
       setIsExporting(false);
     }
@@ -308,6 +361,8 @@ export default function App() {
         onOpenPreview={() => setIsPreviewModalOpen(true)}
         onDownloadPDF={handleDownloadPDF}
         onDownloadCurrentJPG={() => handleDownloadCurrentJPG(activeSheetIndex)}
+        onDownloadDOCX={handleDownloadDOCX}
+        onDownloadXLSX={handleDownloadXLSX}
         isSaving={isSaving}
         isExporting={isExporting}
       />
@@ -381,36 +436,60 @@ export default function App() {
 
         {/* 5. Bagian Bawah Halaman (Static di alur dokumen biasa, TIDAK melayang/sticky) */}
         <div className="pt-2 pb-6 space-y-2">
-          {/* Baris Tombol Aksi Bawah */}
-          <div className="grid grid-cols-3 gap-1.5 md:gap-2">
-            <button
-              type="button"
-              onClick={() => setIsPreviewModalOpen(true)}
-              className="py-2.5 px-2 bg-white hover:bg-slate-50 text-slate-900 border border-black font-bold text-xs md:text-sm flex items-center justify-center gap-1.5 shadow-2xs"
-            >
-              <Eye className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-700" />
-              <span>Pratinjau</span>
-            </button>
+          {/* Baris Tombol Aksi Bawah (Pratinjau, JPG, PDF, Word, Excel) */}
+          <div className="space-y-1.5 md:space-y-0 md:grid md:grid-cols-5 md:gap-2">
+            <div className="grid grid-cols-2 gap-1.5 md:contents">
+              <button
+                type="button"
+                onClick={() => setIsPreviewModalOpen(true)}
+                className="py-2.5 px-2 bg-white hover:bg-slate-50 text-slate-900 border border-black font-bold text-xs md:text-sm flex items-center justify-center gap-1.5 shadow-2xs"
+              >
+                <Eye className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-700 shrink-0" />
+                <span>Pratinjau</span>
+              </button>
 
-            <button
-              type="button"
-              disabled={isExporting}
-              onClick={() => handleDownloadCurrentJPG(activeSheetIndex)}
-              className="py-2.5 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 disabled:opacity-40 text-white font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
-            >
-              <ImageIcon className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-300" />
-              <span>Unduh JPG</span>
-            </button>
+              <button
+                type="button"
+                disabled={isExporting}
+                onClick={() => handleDownloadCurrentJPG(activeSheetIndex)}
+                className="py-2.5 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 disabled:opacity-40 text-white font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
+              >
+                <ImageIcon className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-300 shrink-0" />
+                <span>Unduh JPG</span>
+              </button>
+            </div>
 
-            <button
-              type="button"
-              disabled={isExporting}
-              onClick={handleDownloadPDF}
-              className="py-2.5 px-2 bg-slate-900 hover:bg-black active:bg-slate-950 disabled:opacity-40 text-white font-black text-xs md:text-sm flex items-center justify-center gap-1.5"
-            >
-              <FileDown className="w-3.5 h-3.5 md:w-4 md:h-4 text-white stroke-[2.5]" />
-              <span>Unduh PDF</span>
-            </button>
+            <div className="grid grid-cols-3 gap-1.5 md:contents">
+              <button
+                type="button"
+                disabled={isExporting}
+                onClick={handleDownloadPDF}
+                className="py-2.5 px-2 bg-slate-900 hover:bg-black active:bg-slate-950 disabled:opacity-40 text-white font-black text-xs md:text-sm flex items-center justify-center gap-1.5"
+              >
+                <FileDown className="w-3.5 h-3.5 md:w-4 md:h-4 text-white stroke-[2.5] shrink-0" />
+                <span>PDF</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isExporting}
+                onClick={handleDownloadDOCX}
+                className="py-2.5 px-2 bg-blue-700 hover:bg-blue-600 active:bg-blue-800 disabled:opacity-40 text-white border border-blue-900 font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-100 shrink-0" />
+                <span>Word</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isExporting}
+                onClick={handleDownloadXLSX}
+                className="py-2.5 px-2 bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 disabled:opacity-40 text-white border border-emerald-900 font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 md:w-4 md:h-4 text-emerald-100 shrink-0" />
+                <span>Excel</span>
+              </button>
+            </div>
           </div>
 
           {/* Tombol Tambah Lembar di Bawah */}
@@ -426,7 +505,7 @@ export default function App() {
           )}
 
           <div className="text-[10px] md:text-xs text-slate-500 text-center pt-1">
-            Format resmi 2x3 A4 &bull; Foto tersimpan otomatis di perangkat &bull; Bebas kuota / offline
+            Format resmi 2x3 A4 &bull; Unduh PDF, JPG, Word, Excel &bull; Bebas kuota / offline
           </div>
         </div>
       </main>
@@ -460,6 +539,8 @@ export default function App() {
         onClose={() => setIsPreviewModalOpen(false)}
         onDownloadPDF={handleDownloadPDF}
         onDownloadJPG={(idx) => handleDownloadCurrentJPG(idx)}
+        onDownloadDOCX={handleDownloadDOCX}
+        onDownloadXLSX={handleDownloadXLSX}
         isExporting={isExporting}
       />
 
