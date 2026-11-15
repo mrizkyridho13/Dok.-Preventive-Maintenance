@@ -9,7 +9,6 @@ import {
   Check,
   Maximize2,
   Minimize2,
-  Smartphone,
 } from 'lucide-react';
 import { PhotoItem, PhotoFitMode } from '../types/report';
 import { compressImage } from '../utils/imageCompressor';
@@ -43,11 +42,9 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Input 1: Tanpa atribut capture -> di HP/APK membuka chooser aplikasi (Kamera Timestamp, Open Camera, Kamera Bawaan, File)
-  const appChooserInputRef = useRef<HTMLInputElement>(null);
-  // Input 2: capture="environment" -> langsung kamera belakang bawaan HP
+  // Input 1: capture="environment" -> memicu intent kamera HP / pemilih aplikasi kamera (jika didukung perangkat/APK)
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  // Input 3: Galeri foto
+  // Input 2: Galeri foto biasa
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const effectiveFitMode: PhotoFitMode = photo?.fitMode || globalFitMode;
@@ -111,16 +108,8 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   return (
     <div className="flex flex-col w-full bg-white border border-black shadow-2xs min-w-0">
       {/* Hidden file inputs:
-          1) appChooserInputRef (no capture) lets Android/APK pick Timestamp Camera / external camera app
-          2) cameraInputRef (capture=environment) launches default rear camera directly
-          3) galleryInputRef picks existing photo from gallery */}
-      <input
-        type="file"
-        ref={appChooserInputRef}
-        accept="image/*"
-        className="hidden"
-        onChange={handleFileChange}
-      />
+          1) cameraInputRef (capture=environment) triggers device camera / camera app intent
+          2) galleryInputRef picks existing photo from gallery */}
       <input
         type="file"
         ref={cameraInputRef}
@@ -171,52 +160,37 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
               loading="lazy"
             />
           ) : (
-            /* Empty Box: Manual buttons for App Chooser (Timestamp Camera), Direct Camera, and Gallery */
-            <div className="w-full h-full p-1.5 sm:p-2 md:p-3 flex flex-col justify-center items-stretch gap-1 sm:gap-1.5 bg-slate-900 text-white">
-              {/* Tombol 1: Buka Kamera / Pilih Apk (Bisa pilih Timestamp Camera / Kamera Luar) */}
+            /* Empty Box: 2 Opsi Manual — Kamera / App dan Dari Galeri */
+            <div className="w-full h-full p-1.5 sm:p-2 md:p-3 flex flex-col justify-center items-stretch gap-1.5 sm:gap-2 bg-slate-900 text-white">
+              {/* Tombol 1: Buka Kamera / App */}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  appChooserInputRef.current?.click();
+                  cameraInputRef.current?.click();
                 }}
-                title="Buka pilihan aplikasi kamera (Kamera Timestamp / Kamera luar / File)"
-                className="w-full py-1.5 sm:py-2 px-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white font-bold rounded-xs flex items-center justify-center gap-1 border border-slate-500 transition active:scale-98"
+                title="Buka kamera HP atau aplikasi kamera pilihan"
+                className="w-full py-1.5 sm:py-2 px-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white font-bold rounded-xs flex items-center justify-center gap-1.5 border border-slate-500 transition active:scale-98"
               >
-                <Smartphone className="w-3.5 h-3.5 shrink-0 text-amber-300" />
-                <span className="text-[10px] sm:text-xs uppercase truncate">
-                  Pilih Kamera / App
+                <Camera className="w-4 h-4 shrink-0 text-white" />
+                <span className="text-[11px] sm:text-xs uppercase truncate">
+                  Kamera / App
                 </span>
               </button>
 
-              {/* Baris 2: Kamera HP langsung & Galeri */}
-              <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    cameraInputRef.current?.click();
-                  }}
-                  title="Langsung buka kamera bawaan HP"
-                  className="py-1.5 px-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-100 font-semibold rounded-xs flex items-center justify-center gap-1 border border-slate-600 transition active:scale-98"
-                >
-                  <Camera className="w-3.5 h-3.5 shrink-0 text-white" />
-                  <span className="text-[10px] sm:text-xs truncate">Kamera HP</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    galleryInputRef.current?.click();
-                  }}
-                  title="Ambil foto dari Galeri HP"
-                  className="py-1.5 px-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-semibold rounded-xs flex items-center justify-center gap-1 border border-slate-700 transition active:scale-98"
-                >
-                  <ImageIcon className="w-3.5 h-3.5 shrink-0 text-slate-300" />
-                  <span className="text-[10px] sm:text-xs truncate">Galeri</span>
-                </button>
-              </div>
+              {/* Tombol 2: Dari Galeri */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  galleryInputRef.current?.click();
+                }}
+                title="Ambil foto dari Galeri HP"
+                className="w-full py-1.5 sm:py-2 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 font-semibold rounded-xs flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-98"
+              >
+                <ImageIcon className="w-3.5 h-3.5 shrink-0 text-slate-300" />
+                <span className="text-[11px] sm:text-xs truncate">Dari Galeri</span>
+              </button>
             </div>
           )}
         </div>
@@ -392,39 +366,25 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
                 type="button"
                 onClick={() => {
                   setShowActionMenu(false);
-                  appChooserInputRef.current?.click();
+                  cameraInputRef.current?.click();
                 }}
                 className="w-full py-2 px-2 bg-slate-800 hover:bg-slate-900 text-white font-bold border border-black text-xs flex items-center justify-center gap-1.5"
               >
-                <Smartphone className="w-3.5 h-3.5 text-amber-300" />
-                Ganti Foto (Pilih App / Timestamp)
+                <Camera className="w-3.5 h-3.5" />
+                Ganti Foto (Kamera / App)
               </button>
 
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowActionMenu(false);
-                    cameraInputRef.current?.click();
-                  }}
-                  className="py-2 px-2 bg-slate-700 hover:bg-slate-800 text-white font-semibold border border-black text-xs flex items-center justify-center gap-1"
-                >
-                  <Camera className="w-3.5 h-3.5" />
-                  <span>Kamera HP</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowActionMenu(false);
-                    galleryInputRef.current?.click();
-                  }}
-                  className="py-2 px-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold border border-black text-xs flex items-center justify-center gap-1"
-                >
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  <span>Dari Galeri</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowActionMenu(false);
+                  galleryInputRef.current?.click();
+                }}
+                className="w-full py-2 px-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold border border-black text-xs flex items-center justify-center gap-1.5"
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                Ganti Foto (Dari Galeri)
+              </button>
 
               {!confirmDelete ? (
                 <button
