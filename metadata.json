@@ -1,0 +1,10 @@
+{
+  "name": "Remix DocuTek - Dokumentasi Maintenance Teknisi",
+  "description": "Aplikasi dokumentasi foto maintenance lapangan PWA ringan untuk teknisi: format grid 2x3 Before/After resmi, auto-numbering, kompresi foto kamera/galeri, IndexedDB offline, dan cetak PDF/JPG A4.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
