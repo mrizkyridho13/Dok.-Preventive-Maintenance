@@ -22,12 +22,14 @@ import {
 } from './utils/db';
 import { generateSheetJPG } from './utils/jpgGenerator';
 import { getThumbnailSrc, loadAndCompressMediaAsset } from './utils/mediaLoader';
+import { saveExportedFile, shareExportedFile } from './utils/nativeExport';
 import { Header } from './components/Header';
 import { SheetTabs } from './components/SheetTabs';
 import { SheetGrid } from './components/SheetGrid';
 import { ReportInfoModal } from './components/ReportInfoModal';
 import { PreviewModal } from './components/PreviewModal';
 import { ConfirmModal } from './components/ConfirmModal';
+import { ShareModal } from './components/ShareModal';
 import {
   Plus,
   FileDown,
@@ -37,6 +39,7 @@ import {
   CheckCircle,
   Camera,
   X,
+  Share2,
 } from 'lucide-react';
 
 export default function App() {
@@ -54,6 +57,7 @@ export default function App() {
   // Modals state
   const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
@@ -407,17 +411,11 @@ export default function App() {
       showToast('Menyiapkan file PDF A4...');
       const { generateReportPDF } = await import('./utils/pdfGenerator');
       const blob = await generateReportPDF(sheets, meta);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
       const cleanLoc = (meta.location || 'Teknisi').replace(/[^a-zA-Z0-9_-]/g, '_');
       const cleanDate = (meta.date || 'Laporan').replace(/[^a-zA-Z0-9_-]/g, '_');
-      a.href = url;
-      a.download = `Laporan_Maintenance_${cleanLoc}_${cleanDate}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast('Unduh PDF selesai');
+      const fileName = `Laporan_Maintenance_${cleanLoc}_${cleanDate}.pdf`;
+      const savedToast = await saveExportedFile(blob, fileName, 'pdf');
+      showToast(savedToast);
     } catch (err) {
       console.error('PDF export error:', err);
       showToast('Gagal menghasilkan dokumen PDF. Silakan coba lagi.');
@@ -434,16 +432,10 @@ export default function App() {
       showToast(`Menyiapkan JPG Lembar ${targetSheet.sheetNumber}...`);
 
       const blob = await generateSheetJPG(targetSheet, meta, sheets.length);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
       const cleanLoc = (meta.location || 'Teknisi').replace(/[^a-zA-Z0-9_-]/g, '_');
-      a.href = url;
-      a.download = `Laporan_${cleanLoc}_Lembar_${targetSheet.sheetNumber}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast(`JPG Lembar ${targetSheet.sheetNumber} selesai diunduh`);
+      const fileName = `Laporan_${cleanLoc}_Lembar_${targetSheet.sheetNumber}.jpg`;
+      const savedToast = await saveExportedFile(blob, fileName, 'jpg');
+      showToast(savedToast);
     } catch (err) {
       console.error('JPG export error:', err);
       showToast('Gagal menghasilkan file JPG. Silakan coba lagi.');
@@ -459,20 +451,48 @@ export default function App() {
       showToast('Menyiapkan dokumen Word (.docx)...');
       const { generateReportDOCX } = await import('./utils/docxGenerator');
       const blob = await generateReportDOCX(sheets, meta);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
       const cleanLoc = (meta.location || 'Teknisi').replace(/[^a-zA-Z0-9_-]/g, '_');
       const cleanDate = (meta.date || 'Laporan').replace(/[^a-zA-Z0-9_-]/g, '_');
-      a.href = url;
-      a.download = `Laporan_Maintenance_${cleanLoc}_${cleanDate}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast('Unduh Word (.docx) selesai');
+      const fileName = `Laporan_Maintenance_${cleanLoc}_${cleanDate}.docx`;
+      const savedToast = await saveExportedFile(blob, fileName, 'docx');
+      showToast(savedToast);
     } catch (err) {
       console.error('DOCX export error:', err);
       showToast('Gagal menghasilkan file Word. Silakan coba lagi.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Handler: Share (CamScanner-style Cache + Share sheet)
+  const handleShareFormat = async (format: 'pdf' | 'jpg' | 'docx') => {
+    try {
+      setIsExporting(true);
+      const cleanLoc = (meta.location || 'Teknisi').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanDate = (meta.date || 'Laporan').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      if (format === 'pdf') {
+        showToast('Menyiapkan PDF untuk dibagikan...');
+        const { generateReportPDF } = await import('./utils/pdfGenerator');
+        const blob = await generateReportPDF(sheets, meta);
+        await shareExportedFile(blob, `Laporan_Maintenance_${cleanLoc}_${cleanDate}.pdf`, 'pdf');
+      } else if (format === 'jpg') {
+        showToast(`Menyiapkan JPG Lembar ${currentSheet.sheetNumber} untuk dibagikan...`);
+        const blob = await generateSheetJPG(currentSheet, meta, sheets.length);
+        await shareExportedFile(blob, `Laporan_${cleanLoc}_Lembar_${currentSheet.sheetNumber}.jpg`, 'jpg');
+      } else {
+        showToast('Menyiapkan Word (.docx) untuk dibagikan...');
+        const { generateReportDOCX } = await import('./utils/docxGenerator');
+        const blob = await generateReportDOCX(sheets, meta);
+        await shareExportedFile(blob, `Laporan_Maintenance_${cleanLoc}_${cleanDate}.docx`, 'docx');
+      }
+      setIsShareModalOpen(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/cancel|dismiss|abort/i.test(msg)) {
+        console.error('Share error:', err);
+        showToast('Gagal membagikan file. Silakan coba lagi.');
+      }
     } finally {
       setIsExporting(false);
     }
@@ -526,6 +546,7 @@ export default function App() {
         onDownloadPDF={handleDownloadPDF}
         onDownloadCurrentJPG={() => handleDownloadCurrentJPG(activeSheetIndex)}
         onDownloadDOCX={handleDownloadDOCX}
+        onOpenShareModal={() => setIsShareModalOpen(true)}
         isSaving={isSaving}
         isExporting={isExporting}
       />
@@ -599,45 +620,58 @@ export default function App() {
 
         {/* 5. Bagian Bawah Halaman (Static di alur dokumen biasa, TIDAK melayang/sticky) */}
         <div className="pt-2 pb-6 space-y-2">
-          {/* Baris Tombol Aksi Bawah (Pratinjau, JPG, PDF, Word) */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 md:gap-2">
-            <button
-              type="button"
-              onClick={() => setIsPreviewModalOpen(true)}
-              className="py-2.5 px-2 bg-white hover:bg-slate-50 text-slate-900 border border-black font-bold text-xs md:text-sm flex items-center justify-center gap-1.5 shadow-2xs"
-            >
-              <Eye className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-700 shrink-0" />
-              <span>Pratinjau</span>
-            </button>
+          {/* Baris Tombol Aksi Bawah (Pratinjau, JPG, PDF, Word) + Ikon Bagikan (Share) */}
+          <div className="flex items-stretch gap-1.5 md:gap-2">
+            <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-1.5 md:gap-2 min-w-0">
+              <button
+                type="button"
+                onClick={() => setIsPreviewModalOpen(true)}
+                className="py-2.5 px-2 bg-white hover:bg-slate-50 text-slate-900 border border-black font-bold text-xs md:text-sm flex items-center justify-center gap-1.5 shadow-2xs"
+              >
+                <Eye className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-700 shrink-0" />
+                <span>Pratinjau</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isExporting}
+                onClick={() => handleDownloadCurrentJPG(activeSheetIndex)}
+                className="py-2.5 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 disabled:opacity-40 text-white font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
+              >
+                <ImageIcon className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-300 shrink-0" />
+                <span>Unduh JPG</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isExporting}
+                onClick={handleDownloadPDF}
+                className="py-2.5 px-2 bg-slate-900 hover:bg-black active:bg-slate-950 disabled:opacity-40 text-white font-black text-xs md:text-sm flex items-center justify-center gap-1.5"
+              >
+                <FileDown className="w-3.5 h-3.5 md:w-4 md:h-4 text-white stroke-[2.5] shrink-0" />
+                <span>Unduh PDF</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isExporting}
+                onClick={handleDownloadDOCX}
+                className="py-2.5 px-2 bg-blue-700 hover:bg-blue-600 active:bg-blue-800 disabled:opacity-40 text-white border border-blue-900 font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-100 shrink-0" />
+                <span>Unduh Word</span>
+              </button>
+            </div>
 
             <button
               type="button"
               disabled={isExporting}
-              onClick={() => handleDownloadCurrentJPG(activeSheetIndex)}
-              className="py-2.5 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 disabled:opacity-40 text-white font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
+              onClick={() => setIsShareModalOpen(true)}
+              className="w-11 md:w-12 shrink-0 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-40 text-white border border-emerald-800 flex items-center justify-center shadow-2xs transition active:scale-95"
+              title="Bagikan laporan (PDF / JPEG / Word)"
+              aria-label="Bagikan laporan"
             >
-              <ImageIcon className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-300 shrink-0" />
-              <span>Unduh JPG</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isExporting}
-              onClick={handleDownloadPDF}
-              className="py-2.5 px-2 bg-slate-900 hover:bg-black active:bg-slate-950 disabled:opacity-40 text-white font-black text-xs md:text-sm flex items-center justify-center gap-1.5"
-            >
-              <FileDown className="w-3.5 h-3.5 md:w-4 md:h-4 text-white stroke-[2.5] shrink-0" />
-              <span>Unduh PDF</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isExporting}
-              onClick={handleDownloadDOCX}
-              className="py-2.5 px-2 bg-blue-700 hover:bg-blue-600 active:bg-blue-800 disabled:opacity-40 text-white border border-blue-900 font-bold text-xs md:text-sm flex items-center justify-center gap-1.5"
-            >
-              <FileText className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-100 shrink-0" />
-              <span>Unduh Word</span>
+              <Share2 className="w-4 h-4 md:w-5 md:h-5" />
             </button>
           </div>
 
@@ -758,6 +792,15 @@ export default function App() {
         isDestructive={true}
         onConfirm={handleConfirmResetAll}
         onClose={() => setIsResetConfirmOpen(false)}
+      />
+
+      {/* 5. CamScanner-style Share Format Modal */}
+      <ShareModal
+        isOpen={isShareModalOpen}
+        activeSheetNumber={currentSheet.sheetNumber}
+        isExporting={isExporting}
+        onShareFormat={(fmt) => void handleShareFormat(fmt)}
+        onClose={() => setIsShareModalOpen(false)}
       />
     </div>
   );

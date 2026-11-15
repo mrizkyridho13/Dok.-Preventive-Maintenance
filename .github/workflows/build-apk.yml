@@ -40,7 +40,7 @@ jobs:
             npx cap add android
           fi
 
-      - name: Configure Android permissions (CAMERA, READ_EXTERNAL_STORAGE & READ_MEDIA_IMAGES)
+      - name: Configure Android permissions (CAMERA, WRITE/READ_EXTERNAL_STORAGE & READ_MEDIA_IMAGES)
         run: |
           node -e "
             const fs = require('fs');
@@ -56,6 +56,9 @@ jobs:
             }
             if (!xml.includes('android.permission.READ_EXTERNAL_STORAGE')) {
               additions.push('    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />');
+            }
+            if (!xml.includes('android.permission.WRITE_EXTERNAL_STORAGE')) {
+              additions.push('    <uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\" />');
             }
             if (!xml.includes('android.permission.ACCESS_MEDIA_LOCATION')) {
               additions.push('    <uses-permission android:name=\"android.permission.ACCESS_MEDIA_LOCATION\" />');
@@ -75,11 +78,14 @@ jobs:
 
             if (additions.length > 0) {
               xml = xml.replace('<application', additions.join('\n') + '\n\n    <application');
-              fs.writeFileSync(manifestPath, xml, 'utf8');
-              console.log('Updated AndroidManifest.xml with:', additions.length, 'entries');
-            } else {
-              console.log('AndroidManifest.xml already contains required permissions');
             }
+
+            if (!xml.includes('android:requestLegacyExternalStorage')) {
+              xml = xml.replace('<application', '<application\n        android:requestLegacyExternalStorage=\"true\"');
+            }
+
+            fs.writeFileSync(manifestPath, xml, 'utf8');
+            console.log('Configured AndroidManifest.xml with:', additions.length, 'new permission entries');
           "
 
       - name: Patch Android MediaStore gallery support

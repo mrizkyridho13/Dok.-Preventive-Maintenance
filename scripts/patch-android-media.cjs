@@ -1,8 +1,8 @@
 /**
  * Patches @capacitor-community/media MediaPlugin.java on Android during APK build
- * so getAlbums(), getMedias(), and getMediaByIdentifier() work natively via MediaStore,
- * and ensures Android 13+ READ_MEDIA_IMAGES permission is cleanly checked without
- * requiring READ_MEDIA_VIDEO.
+ * so getAlbums(), getMedias() (with offset pagination), getMediaByIdentifier(),
+ * and savePublicFile() (MediaStore Pictures/PGE-DocuTek & Download/PGE-DocuTek)
+ * work natively on Android 8–15.
  */
 const fs = require('fs');
 const path = require('path');
@@ -30,13 +30,15 @@ if (!fs.existsSync(targetPath)) {
 
 let java = fs.readFileSync(targetPath, 'utf8');
 
-if (java.includes('__PGE_MEDIA_PATCHED__')) {
-  console.log('MediaPlugin.java already patched.');
+if (java.includes('__PGE_MEDIA_PATCHED_V2__')) {
+  console.log('MediaPlugin.java already patched (v2).');
   process.exit(0);
 }
 
 // 1. Ensure needed Android imports are present
 const neededImports = [
+  'import android.content.ContentResolver;',
+  'import android.content.ContentValues;',
   'import android.graphics.Bitmap;',
   'import android.graphics.BitmapFactory;',
   'import android.graphics.Matrix;',
@@ -52,7 +54,7 @@ for (const imp of neededImports) {
   }
 }
 
-// 2. Update @Permission publicStorage13Plus so only READ_MEDIA_IMAGES is required (no READ_MEDIA_VIDEO needed)
+// 2. Update @Permission publicStorage13Plus so only READ_MEDIA_IMAGES is required
 java = java.replace(
   'strings = { Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO },',
   'strings = { Manifest.permission.READ_MEDIA_IMAGES },'
@@ -76,7 +78,7 @@ const getMediasTarget = `    // @todo
         call.unimplemented("No need to do this on Android -- the identifier is the file path.");
     }`;
 
-const getMediasReplacement = `    // __PGE_MEDIA_PATCHED__
+const getMediasReplacement = `    // __PGE_MEDIA_PATCHED_V2__
     @PluginMethod
     public void getMedias(PluginCall call) {
         if (isStoragePermissionGranted()) {
@@ -95,57 +97,71 @@ const getMediasReplacement = `    // __PGE_MEDIA_PATCHED__
             return;
         }
         _getMediaByIdentifier(call);
+    }
+
+    @PluginMethod
+    public void savePublicFile(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && !isStoragePermissionGranted()) {
+            this.bridge.saveCall(call);
+            requestAllPermissions(call, "permissionCallback");
+            return;
+        }
+        _savePublicFile(call);
     }`;
 
-if (!java.includes(getMediasTarget)) {
-  throw new Error('Could not locate getMedias stub in MediaPlugin.java');
+if (java.includes(getMediasTarget)) {
+  java = java.replace(getMediasTarget, getMediasReplacement);
 }
-java = java.replace(getMediasTarget, getMediasReplacement);
 
-// 5. Update permissionCallback switch to route getMedias & getMediaByIdentifier
+// 5. Update permissionCallback switch
 java = java.replace(
   'case "getMedias" -> call.unimplemented();',
-  'case "getMedias" -> _getMedias(call);\n            case "getMediaByIdentifier" -> _getMediaByIdentifier(call);'
+  'case "getMedias" -> _getMedias(call);\n            case "getMediaByIdentifier" -> _getMediaByIdentifier(call);\n            case "savePublicFile" -> _savePublicFile(call);'
 );
 
 // 6. Harden _getAlbums against null cursors / null listFiles()
-java = java.replace(
-  `        for (Cursor cur : curs) {
+if (!java.includes('if (cur == null) continue;')) {
+  java = java.replace(
+    `        for (Cursor cur : curs) {
             while (cur.moveToNext()) {`,
-  `        for (Cursor cur : curs) {
+    `        for (Cursor cur : curs) {
             if (cur == null) continue;
             while (cur.moveToNext()) {`
-);
+  );
+}
 
-java = java.replace(
-  `        File albumPath = new File(_getAlbumsPath());
+if (!java.includes('File[] subDirs = albumPath.listFiles();')) {
+  java = java.replace(
+    `        File albumPath = new File(_getAlbumsPath());
         for (File sub : albumPath.listFiles()) {`,
-  `        File albumPath = new File(_getAlbumsPath());
+    `        File albumPath = new File(_getAlbumsPath());
         File[] subDirs = albumPath.listFiles();
         if (subDirs != null) {
         for (File sub : subDirs) {`
-);
+  );
 
-java = java.replace(
-  `                albums.put(album);
+  java = java.replace(
+    `                albums.put(album);
             }
         }
 
         response.put("albums", albums);`,
-  `                albums.put(album);
+    `                albums.put(album);
             }
         }
         }` + '\n\n        response.put("albums", albums);'
-);
+  );
+}
 
-// 7. Inject _getMedias, _getMediaByIdentifier, and bitmap/exif helpers before final closing brace
+// 7. Inject _getMedias (with offset), _getMediaByIdentifier, _savePublicFile, and helpers
 const mediaHelpers = `
     private void _getMedias(PluginCall call) {
         try {
-            int quantity = call.getInt("quantity", 50);
-            int thumbWidth = call.getInt("thumbnailWidth", 320);
-            int thumbHeight = call.getInt("thumbnailHeight", 320);
-            int thumbQuality = call.getInt("thumbnailQuality", 78);
+            int quantity = call.getInt("quantity", 30);
+            int offset = Math.max(0, call.getInt("offset", 0));
+            int thumbWidth = call.getInt("thumbnailWidth", 250);
+            int thumbHeight = call.getInt("thumbnailHeight", 250);
+            int thumbQuality = call.getInt("thumbnailQuality", 60);
             String albumIdentifier = call.getString("albumIdentifier", null);
 
             String sortOrder = MediaStore.Images.Media.DATE_MODIFIED + " DESC, " + MediaStore.Images.Media._ID + " DESC";
@@ -173,6 +189,7 @@ const mediaHelpers = `
             JSArray medias = new JSArray();
             SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
             isoFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+            int matchedCount = 0;
 
             try (Cursor cur = getActivity().getContentResolver().query(imageUri, projection, selection, selectionArgs, sortOrder)) {
                 if (cur != null) {
@@ -190,13 +207,18 @@ const mediaHelpers = `
                         File f = new File(filePath);
                         if (!f.exists() || !f.isFile()) continue;
 
-                        // Filter strictly to selected album directory (exclude nested subdirectories)
                         if (albumIdentifier != null && !albumIdentifier.trim().isEmpty()) {
                             String parent = f.getParent();
                             if (parent == null || !parent.equals(albumIdentifier)) {
                                 continue;
                             }
                         }
+
+                        if (matchedCount < offset) {
+                            matchedCount++;
+                            continue;
+                        }
+                        matchedCount++;
 
                         long dateMs = 0L;
                         if (dateTakenIdx >= 0) {
@@ -271,6 +293,85 @@ const mediaHelpers = `
         }
     }
 
+    private void _savePublicFile(PluginCall call) {
+        String base64Data = call.getString("base64Data");
+        String fileName = call.getString("fileName");
+        String mimeType = call.getString("mimeType", "application/octet-stream");
+        String relativeFolder = call.getString("folder", "Download/PGE-DocuTek");
+
+        if (base64Data == null || fileName == null) {
+            call.reject("base64Data and fileName are required", EC_ARG_ERROR);
+            return;
+        }
+
+        try {
+            String cleanBase64 = base64Data.contains(",") ? base64Data.substring(base64Data.indexOf(",") + 1) : base64Data;
+            byte[] bytes = Base64.decode(cleanBase64, Base64.DEFAULT);
+            boolean isImage = mimeType.startsWith("image/");
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentResolver resolver = getContext().getContentResolver();
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, relativeFolder);
+                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+
+                Uri collection = isImage
+                    ? MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                    : MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+
+                Uri itemUri = resolver.insert(collection, values);
+                if (itemUri == null) {
+                    call.reject("Gagal membuat entri MediaStore", EC_FS_ERROR);
+                    return;
+                }
+
+                try (OutputStream out = resolver.openOutputStream(itemUri)) {
+                    if (out == null) {
+                        call.reject("Gagal membuka output stream", EC_FS_ERROR);
+                        return;
+                    }
+                    out.write(bytes);
+                }
+
+                values.clear();
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                resolver.update(itemUri, values, null, null);
+
+                JSObject res = new JSObject();
+                res.put("uri", itemUri.toString());
+                res.put("folder", relativeFolder);
+                call.resolve(res);
+                return;
+            }
+
+            // Android <= 9 fallback
+            File baseDir = isImage
+                ? Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                : Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            File targetDir = new File(baseDir, "PGE-DocuTek");
+            if (!targetDir.exists()) {
+                targetDir.mkdirs();
+            }
+            File outFile = new File(targetDir, fileName);
+            try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                fos.write(bytes);
+            }
+            if (isImage) {
+                scanPhoto(outFile);
+            }
+
+            JSObject res = new JSObject();
+            res.put("uri", Uri.fromFile(outFile).toString());
+            res.put("folder", relativeFolder);
+            call.resolve(res);
+        } catch (Exception ex) {
+            Log.e("MediaPlugin", "Error in _savePublicFile", ex);
+            call.reject("Gagal menyimpan file ke penyimpanan publik: " + ex.getMessage(), EC_FS_ERROR);
+        }
+    }
+
     private String encodeThumbnailBase64(String filePath, int reqW, int reqH, int quality) {
         try {
             BitmapFactory.Options opts = new BitmapFactory.Options();
@@ -292,7 +393,6 @@ const mediaHelpers = `
             Bitmap bmp = BitmapFactory.decodeFile(filePath, decodeOpts);
             if (bmp == null) return null;
 
-            // Apply EXIF rotation if present
             try {
                 ExifInterface exif = new ExifInterface(filePath);
                 int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
@@ -311,7 +411,6 @@ const mediaHelpers = `
                 }
             } catch (Exception ignored) {}
 
-            // Downscale proportionally if larger than target bounds
             int curW = bmp.getWidth();
             int curH = bmp.getHeight();
             int maxDim = Math.max(targetW, targetH);
@@ -338,11 +437,17 @@ const mediaHelpers = `
 }
 `;
 
-const lastBrace = java.lastIndexOf('}');
-if (lastBrace === -1) {
-  throw new Error('Malformed MediaPlugin.java: missing closing brace');
+// If previously patched v1, reset cleanly by finding first _getMedias or last brace
+const prevV1Marker = java.indexOf('    private void _getMedias(PluginCall call)');
+if (prevV1Marker !== -1) {
+  java = java.slice(0, prevV1Marker) + mediaHelpers;
+} else {
+  const lastBrace = java.lastIndexOf('}');
+  if (lastBrace === -1) {
+    throw new Error('Malformed MediaPlugin.java: missing closing brace');
+  }
+  java = java.slice(0, lastBrace) + mediaHelpers;
 }
-java = java.slice(0, lastBrace) + mediaHelpers;
 
 fs.writeFileSync(targetPath, java, 'utf8');
-console.log('Successfully patched MediaPlugin.java with Android MediaStore getMedias & getMediaByIdentifier.');
+console.log('Successfully patched MediaPlugin.java (v2) with paginated getMedias & MediaStore savePublicFile.');

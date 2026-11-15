@@ -11,7 +11,9 @@ import {
 import { getThumbnailSrc, loadAndCompressMediaAsset } from '../utils/mediaLoader';
 
 export const LAST_ALBUM_STORAGE_KEY = 'docutek_last_album_identifier';
+const CACHED_ALBUMS_SESSION_KEY = 'docutek_cached_albums_v1';
 const ALL_ALBUMS_ID = '__ALL__';
+const PAGE_SIZE = 30;
 
 interface LocalGalleryModalProps {
   isOpen: boolean;
@@ -20,13 +22,24 @@ interface LocalGalleryModalProps {
   onClose: () => void;
 }
 
+function readCachedAlbumsFromSession(): MediaAlbum[] {
+  try {
+    const raw = sessionStorage.getItem(CACHED_ALBUMS_SESSION_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as MediaAlbum[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
   isOpen,
   onSelectPhoto,
   onFallbackFilePicker,
   onClose,
 }) => {
-  const [albums, setAlbums] = useState<MediaAlbum[]>([]);
+  const [albums, setAlbums] = useState<MediaAlbum[]>(() => readCachedAlbumsFromSession());
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>(() => {
     try {
       return localStorage.getItem(LAST_ALBUM_STORAGE_KEY) || ALL_ALBUMS_ID;
@@ -35,8 +48,10 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
     }
   });
   const [photos, setPhotos] = useState<MediaAsset[]>([]);
+  const [hasMore, setHasMore] = useState(false);
   const [isLoadingAlbums, setIsLoadingAlbums] = useState(false);
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSelectingPhoto, setIsSelectingPhoto] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null);
@@ -62,15 +77,26 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
     });
   };
 
-  const loadAlbums = useCallback(async () => {
+  const loadAlbums = useCallback(async (forceRefresh: boolean = false) => {
+    // Gunakan cache sessionStorage agar daftar album langsung muncul 0 detik saat modal dibuka ulang
+    const cached = readCachedAlbumsFromSession();
+    if (!forceRefresh && cached.length > 0) {
+      setAlbums(cached);
+      return;
+    }
+
     setIsLoadingAlbums(true);
     setErrorMessage(null);
     try {
       const res = await Media.getAlbums();
       const sorted = sortAlbumsPriority(res.albums || []);
       setAlbums(sorted);
+      try {
+        sessionStorage.setItem(CACHED_ALBUMS_SESSION_KEY, JSON.stringify(sorted));
+      } catch {
+        // Ignore sessionStorage quota issues
+      }
 
-      // Pastikan albumIdentifier yang tersimpan masih valid; jika tidak, fallback ke Semua
       setSelectedAlbumId((prev) => {
         if (prev === ALL_ALBUMS_ID) return ALL_ALBUMS_ID;
         const stillExists = sorted.some((a) => a.identifier === prev);
@@ -78,34 +104,70 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
       });
     } catch (err) {
       console.error('Error loading local albums:', err);
-      setErrorMessage('Izin akses foto diperlukan untuk menampilkan folder galeri lokal.');
+      if (cached.length === 0) {
+        setErrorMessage('Izin akses foto diperlukan untuk menampilkan folder galeri lokal.');
+      }
     } finally {
       setIsLoadingAlbums(false);
     }
   }, []);
 
-  const loadMediasForAlbum = useCallback(async (albumId: string) => {
-    setIsLoadingPhotos(true);
-    setErrorMessage(null);
-    try {
-      const res = await Media.getMedias({
-        quantity: 60,
-        thumbnailWidth: 320,
-        thumbnailHeight: 320,
-        thumbnailQuality: 78,
-        types: 'photos',
-        ...(albumId !== ALL_ALBUMS_ID ? { albumIdentifier: albumId } : {}),
-        sort: [{ key: 'creationDate', ascending: false }],
-      });
-      setPhotos(res.medias || []);
-    } catch (err) {
-      console.error('Error loading local medias:', err);
-      setErrorMessage('Gagal memuat foto dari folder ini.');
-      setPhotos([]);
-    } finally {
-      setIsLoadingPhotos(false);
-    }
+  const fetchMediasBatch = useCallback(async (albumId: string, offset: number) => {
+    const options = {
+      quantity: PAGE_SIZE,
+      offset,
+      thumbnailWidth: 250,
+      thumbnailHeight: 250,
+      thumbnailQuality: 60,
+      types: 'photos' as const,
+      ...(albumId !== ALL_ALBUMS_ID ? { albumIdentifier: albumId } : {}),
+      sort: [{ key: 'creationDate' as const, ascending: false }],
+    };
+
+    const res = await Media.getMedias(
+      options as Parameters<typeof Media.getMedias>[0]
+    );
+    return res.medias || [];
   }, []);
+
+  const loadInitialMedias = useCallback(
+    async (albumId: string) => {
+      setIsLoadingPhotos(true);
+      setErrorMessage(null);
+      setPhotos([]);
+      setHasMore(false);
+      try {
+        const batch = await fetchMediasBatch(albumId, 0);
+        setPhotos(batch);
+        setHasMore(batch.length >= PAGE_SIZE);
+      } catch (err) {
+        console.error('Error loading local medias:', err);
+        setErrorMessage('Gagal memuat foto dari folder ini.');
+        setPhotos([]);
+      } finally {
+        setIsLoadingPhotos(false);
+      }
+    },
+    [fetchMediasBatch]
+  );
+
+  const handleLoadMore = async () => {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const nextBatch = await fetchMediasBatch(selectedAlbumId, photos.length);
+      setPhotos((prev) => {
+        const seen = new Set(prev.map((p) => p.identifier));
+        const appended = nextBatch.filter((item) => item.identifier && !seen.has(item.identifier));
+        return [...prev, ...appended];
+      });
+      setHasMore(nextBatch.length >= PAGE_SIZE);
+    } catch (err) {
+      console.error('Error loading more medias:', err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -118,13 +180,13 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
       }
     })();
     setSelectedAlbumId(savedAlbum);
-    void loadAlbums();
+    void loadAlbums(false);
   }, [isOpen, loadAlbums]);
 
   useEffect(() => {
     if (!isOpen) return;
-    void loadMediasForAlbum(selectedAlbumId);
-  }, [isOpen, selectedAlbumId, loadMediasForAlbum]);
+    void loadInitialMedias(selectedAlbumId);
+  }, [isOpen, selectedAlbumId, loadInitialMedias]);
 
   const handleSelectAlbum = (albumId: string) => {
     setSelectedAlbumId(albumId);
@@ -171,11 +233,11 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
             <button
               type="button"
               onClick={() => {
-                void loadAlbums();
-                void loadMediasForAlbum(selectedAlbumId);
+                void loadAlbums(true);
+                void loadInitialMedias(selectedAlbumId);
               }}
               className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
-              title="Muat ulang daftar foto"
+              title="Muat ulang daftar folder & foto"
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 ${
@@ -194,7 +256,7 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
           </div>
         </div>
 
-        {/* Horizontal Scrollable Album Tabs */}
+        {/* Horizontal Scrollable Album Tabs (Cached in sessionStorage for 0s load) */}
         <div className="bg-slate-100 border-b border-slate-300 px-2 py-2 overflow-x-auto shrink-0">
           <div className="flex items-center gap-1.5 min-w-max">
             <button
@@ -229,7 +291,7 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
           </div>
         </div>
 
-        {/* Body: 3-Column Photo Grid */}
+        {/* Body: 3-Column Photo Grid (30 items per fast batch + Load More) */}
         <div className="flex-1 overflow-y-auto p-2 bg-slate-50 relative">
           {isSelectingPhoto && (
             <div className="absolute inset-0 z-20 bg-white/80 flex flex-col items-center justify-center gap-2">
@@ -248,8 +310,8 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    void loadAlbums();
-                    void loadMediasForAlbum(selectedAlbumId);
+                    void loadAlbums(true);
+                    void loadInitialMedias(selectedAlbumId);
                   }}
                   className="px-3 py-1.5 bg-slate-900 text-white text-xs font-bold border border-black"
                 >
@@ -270,7 +332,7 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
           ) : isLoadingPhotos && photos.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center gap-2 py-12">
               <div className="w-6 h-6 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
-              <span className="text-xs text-slate-600 font-medium">Memuat foto lokal...</span>
+              <span className="text-xs text-slate-600 font-medium">Memuat 30 foto terbaru...</span>
             </div>
           ) : photos.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2">
@@ -290,43 +352,63 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-              {photos.map((asset) => {
-                const thumbSrc = getThumbnailSrc(asset);
-                return (
-                  <div
-                    key={asset.identifier}
-                    onClick={() => void handleConfirmAsset(asset)}
-                    className="relative aspect-square bg-slate-200 border border-slate-300 overflow-hidden cursor-pointer group active:scale-98 transition"
-                  >
-                    {thumbSrc ? (
-                      <img
-                        src={thumbSrc}
-                        alt="Foto lokal"
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-400">
-                        <ImageIcon className="w-5 h-5" />
-                      </div>
-                    )}
-
-                    {/* Tombol Preview / Perbesar kecil di pojok kanan atas */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPreviewAsset(asset);
-                      }}
-                      title="Perbesar / Preview foto"
-                      className="absolute top-1 right-1 w-6 h-6 bg-black/75 hover:bg-black text-white flex items-center justify-center border border-white/40 shadow-sm"
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                {photos.map((asset) => {
+                  const thumbSrc = getThumbnailSrc(asset);
+                  return (
+                    <div
+                      key={asset.identifier}
+                      onClick={() => void handleConfirmAsset(asset)}
+                      className="relative aspect-square bg-slate-200 border border-slate-300 overflow-hidden cursor-pointer group active:scale-98 transition"
                     >
-                      <ZoomIn className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })}
+                      {thumbSrc ? (
+                        <img
+                          src={thumbSrc}
+                          alt="Foto lokal"
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400">
+                          <ImageIcon className="w-5 h-5" />
+                        </div>
+                      )}
+
+                      {/* Tombol Preview / Perbesar kecil di pojok kanan atas */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewAsset(asset);
+                        }}
+                        title="Perbesar / Preview foto"
+                        className="absolute top-1 right-1 w-6 h-6 bg-black/75 hover:bg-black text-white flex items-center justify-center border border-white/40 shadow-sm"
+                      >
+                        <ZoomIn className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {hasMore && (
+                <button
+                  type="button"
+                  disabled={isLoadingMore}
+                  onClick={() => void handleLoadMore()}
+                  className="w-full py-2 bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-900 font-bold text-xs border border-slate-400 flex items-center justify-center gap-1.5"
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
+                      <span>Memuat foto lainnya...</span>
+                    </>
+                  ) : (
+                    <span>Muat Lebih Banyak</span>
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -334,7 +416,7 @@ export const LocalGalleryModal: React.FC<LocalGalleryModalProps> = ({
         {/* Footer Info & Alternative File Picker */}
         <div className="bg-white border-t border-slate-300 px-3 py-2 flex items-center justify-between gap-2 text-[11px] text-slate-600 shrink-0">
           <span className="truncate">
-            Ketuk foto untuk memilih &bull; Ikon kaca pembesar untuk preview
+            Ketuk foto untuk memilih &bull; Kaca pembesar untuk preview
           </span>
           <button
             type="button"
