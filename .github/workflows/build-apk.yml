@@ -82,6 +82,9 @@ jobs:
             }
           "
 
+      - name: Patch Android MediaStore gallery support
+        run: node scripts/patch-android-media.cjs
+
       - name: Generate Android icons and splash screens
         run: npx capacitor-assets generate --android
 

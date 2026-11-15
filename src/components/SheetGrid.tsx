@@ -55,6 +55,7 @@ export const SheetGrid: React.FC<SheetGridProps> = ({
             {/* Kolom Kiri: BEFORE */}
             <PhotoBox
               type="before"
+              slotId={`${sheet.id}::${rIdx}::before`}
               boxNumber={row.beforeNumber ?? ((sheet.sheetNumber - 1) * 6 + rIdx * 2 + 1)}
               photo={row.beforePhoto}
               caption={row.beforeCaption}
@@ -68,6 +69,7 @@ export const SheetGrid: React.FC<SheetGridProps> = ({
             {/* Kolom Kanan: AFTER */}
             <PhotoBox
               type="after"
+              slotId={`${sheet.id}::${rIdx}::after`}
               boxNumber={row.afterNumber ?? ((sheet.sheetNumber - 1) * 6 + rIdx * 2 + 2)}
               photo={row.afterPhoto}
               caption={row.afterCaption}

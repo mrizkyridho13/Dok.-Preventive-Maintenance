@@ -3,7 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Media, MediaAsset } from '@capacitor-community/media';
 import {
   Sheet,
   ReportMeta,
@@ -18,6 +21,7 @@ import {
   renumberSheets,
 } from './utils/db';
 import { generateSheetJPG } from './utils/jpgGenerator';
+import { getThumbnailSrc, loadAndCompressMediaAsset } from './utils/mediaLoader';
 import { Header } from './components/Header';
 import { SheetTabs } from './components/SheetTabs';
 import { SheetGrid } from './components/SheetGrid';
@@ -31,6 +35,8 @@ import {
   Image as ImageIcon,
   Eye,
   CheckCircle,
+  Camera,
+  X,
 } from 'lucide-react';
 
 export default function App() {
@@ -51,13 +57,25 @@ export default function App() {
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
-  // Debounced save ref
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Auto-capture state (Timestamp / Timemark return detection)
+  const [pendingAutoCapture, setPendingAutoCapture] = useState<{
+    slotId: string;
+    asset: MediaAsset;
+    slotLabel: string;
+  } | null>(null);
+  const [isApplyingAutoCapture, setIsApplyingAutoCapture] = useState(false);
 
-  const showToast = (msg: string) => {
+  // Debounced save ref & latest sheets ref
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sheetsRef = useRef<Sheet[]>(sheets);
+  useEffect(() => {
+    sheetsRef.current = sheets;
+  }, [sheets]);
+
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 2500);
-  };
+  }, []);
 
   // 1. Initial Load from IndexedDB
   useEffect(() => {
@@ -103,6 +121,179 @@ export default function App() {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [sheets, meta, activeSheetIndex, isLoaded]);
+
+  // 3. Auto-Capture Detector when returning from Camera / Timemark / Timestamp Camera
+  const formatSlotLabel = useCallback((slotId: string): string => {
+    const [sheetId, rowIdxStr, side] = slotId.split('::');
+    const rowIdx = Number(rowIdxStr);
+    const targetSheet = sheetsRef.current.find((s) => s.id === sheetId);
+    if (!targetSheet || Number.isNaN(rowIdx)) {
+      return 'Kotak Foto Aktif';
+    }
+    const row = targetSheet.rows[rowIdx];
+    const boxNum =
+      side === 'before'
+        ? row?.beforeNumber ?? ((targetSheet.sheetNumber - 1) * 6 + rowIdx * 2 + 1)
+        : row?.afterNumber ?? ((targetSheet.sheetNumber - 1) * 6 + rowIdx * 2 + 2);
+    return `Foto #${boxNum} (${side === 'before' ? 'BEFORE' : 'AFTER'})`;
+  }, []);
+
+  const checkRecentTimestampPhoto = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let activeSlotId: string | null = null;
+    let openedAt = 0;
+    let lastCapturedId: string | null = null;
+    try {
+      activeSlotId = localStorage.getItem('active_slot_id');
+      openedAt = Number(localStorage.getItem('active_slot_opened_at') || '0');
+      lastCapturedId = localStorage.getItem('last_auto_captured_media_id');
+    } catch {
+      return;
+    }
+
+    if (!activeSlotId) return;
+
+    try {
+      const res = await Media.getMedias({
+        quantity: 1,
+        thumbnailWidth: 360,
+        thumbnailHeight: 360,
+        thumbnailQuality: 80,
+        types: 'photos',
+        sort: 'creationDate',
+      });
+
+      const newest = res.medias?.[0];
+      if (!newest || !newest.identifier) return;
+      if (newest.identifier === lastCapturedId) return;
+
+      const createdMs = newest.creationDate ? new Date(newest.creationDate).getTime() : 0;
+      const now = Date.now();
+      const withinOneMinute = createdMs > 0 && now - createdMs <= 60_000;
+      const takenAfterTap = openedAt <= 0 || createdMs >= openedAt - 10_000;
+
+      if (withinOneMinute && takenAfterTap) {
+        setPendingAutoCapture({
+          slotId: activeSlotId,
+          asset: newest,
+          slotLabel: formatSlotLabel(activeSlotId),
+        });
+      }
+    } catch (err) {
+      console.warn('Auto-capture check skipped:', err);
+    }
+  }, [formatSlotLabel]);
+
+  useEffect(() => {
+    let removeNativeListener: (() => void) | undefined;
+    let checkTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleCheck = () => {
+      if (checkTimer) clearTimeout(checkTimer);
+      checkTimer = setTimeout(() => {
+        void checkRecentTimestampPhoto();
+      }, 400);
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          scheduleCheck();
+        }
+      }).then((handle) => {
+        removeNativeListener = () => {
+          void handle.remove();
+        };
+      });
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        scheduleCheck();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      if (checkTimer) clearTimeout(checkTimer);
+      removeNativeListener?.();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [checkRecentTimestampPhoto]);
+
+  const handleConfirmAutoCapture = async () => {
+    if (!pendingAutoCapture) return;
+    try {
+      setIsApplyingAutoCapture(true);
+      const compressedDataUrl = await loadAndCompressMediaAsset(pendingAutoCapture.asset);
+      const [sheetId, rowIdxStr, side] = pendingAutoCapture.slotId.split('::');
+      const rowIdx = Number(rowIdxStr);
+      const field = side === 'before' ? 'beforePhoto' : 'afterPhoto';
+
+      const newPhoto: PhotoItem = {
+        id: `p-${Date.now()}`,
+        dataUrl: compressedDataUrl,
+        timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setSheets((prevSheets) =>
+        prevSheets.map((sheet) => {
+          if (sheet.id !== sheetId || Number.isNaN(rowIdx)) return sheet;
+          const updatedRows = [...sheet.rows] as typeof sheet.rows;
+          const existingRow = updatedRows[rowIdx];
+          if (!existingRow) return sheet;
+
+          updatedRows[rowIdx] = {
+            ...existingRow,
+            [field]: {
+              ...newPhoto,
+              fitMode: existingRow[field]?.fitMode,
+            },
+          };
+
+          return {
+            ...sheet,
+            rows: updatedRows,
+          };
+        })
+      );
+
+      try {
+        localStorage.setItem('last_auto_captured_media_id', pendingAutoCapture.asset.identifier);
+        localStorage.removeItem('active_slot_id');
+        localStorage.removeItem('active_slot_opened_at');
+      } catch {
+        // Ignore storage errors
+      }
+
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(25);
+      }
+
+      const appliedLabel = pendingAutoCapture.slotLabel;
+      setPendingAutoCapture(null);
+      showToast(`Foto Timestamp dimasukkan ke ${appliedLabel}`);
+    } catch (err) {
+      console.error('Failed to apply auto-captured photo:', err);
+      showToast('Gagal memuat foto terbaru. Silakan pilih lewat Dari Galeri.');
+    } finally {
+      setIsApplyingAutoCapture(false);
+    }
+  };
+
+  const handleDismissAutoCapture = () => {
+    if (pendingAutoCapture?.asset?.identifier) {
+      try {
+        localStorage.setItem('last_auto_captured_media_id', pendingAutoCapture.asset.identifier);
+        localStorage.removeItem('active_slot_id');
+        localStorage.removeItem('active_slot_opened_at');
+      } catch {
+        // Ignore storage errors
+      }
+    }
+    setPendingAutoCapture(null);
+  };
 
   // Active Sheet safe getter
   const currentSheet = sheets[activeSheetIndex] || sheets[0];
@@ -467,6 +658,52 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {/* Quick 1-Click Auto-Capture Banner for Recent Timestamp / Timemark Photo */}
+      {pendingAutoCapture && (
+        <div className="fixed bottom-3 left-2 right-2 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md z-50 bg-slate-900 text-white border-2 border-amber-400 p-2.5 shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-4">
+          <img
+            src={getThumbnailSrc(pendingAutoCapture.asset)}
+            alt="Foto terbaru Timestamp"
+            className="w-12 h-12 object-cover border border-slate-600 shrink-0 bg-black"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-extrabold text-amber-300 flex items-center gap-1 truncate">
+              <Camera className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Gunakan foto terbaru dari Timestamp?</span>
+            </div>
+            <div className="text-[11px] text-slate-300 truncate">
+              Tujuan: <strong className="text-white">{pendingAutoCapture.slotLabel}</strong>
+            </div>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <button
+                type="button"
+                disabled={isApplyingAutoCapture}
+                onClick={() => void handleConfirmAutoCapture()}
+                className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-slate-950 font-black text-[11px] border border-amber-200 transition active:scale-95"
+              >
+                {isApplyingAutoCapture ? 'Memproses...' : 'Ya, Gunakan Foto Ini'}
+              </button>
+              <button
+                type="button"
+                disabled={isApplyingAutoCapture}
+                onClick={handleDismissAutoCapture}
+                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-[11px] border border-slate-700"
+              >
+                Abaikan
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleDismissAutoCapture}
+            className="self-start text-slate-400 hover:text-white p-0.5"
+            aria-label="Tutup konfirmasi foto"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Floating Toast Notification (Hanya muncul sebentar saat aksi berhasil) */}
       {toastMessage && (

@@ -17,9 +17,11 @@ import {
 } from 'lucide-react';
 import { PhotoItem, PhotoFitMode } from '../types/report';
 import { compressImage } from '../utils/imageCompressor';
+import { LocalGalleryModal } from './LocalGalleryModal';
 
 interface PhotoBoxProps {
   type: 'before' | 'after';
+  slotId: string;
   boxNumber: number; // Sequential photo number (1, 2, 3, 4, 5, 6...)
   photo?: PhotoItem;
   caption: string;
@@ -38,6 +40,7 @@ const TIMEMARK_PACKAGES = [
 
 export const PhotoBox: React.FC<PhotoBoxProps> = ({
   type,
+  slotId,
   boxNumber,
   photo,
   caption,
@@ -50,6 +53,7 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showFullView, setShowFullView] = useState(false);
+  const [showLocalGallery, setShowLocalGallery] = useState(false);
   const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -93,7 +97,41 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
     }
   };
 
+  const saveActiveSlotForCapture = () => {
+    try {
+      localStorage.setItem('active_slot_id', slotId);
+      localStorage.setItem('active_slot_opened_at', String(Date.now()));
+    } catch {
+      // Ignore storage errors
+    }
+  };
+
+  const clearActiveSlotForCapture = () => {
+    try {
+      localStorage.removeItem('active_slot_id');
+      localStorage.removeItem('active_slot_opened_at');
+    } catch {
+      // Ignore storage errors
+    }
+  };
+
+  const applyAlreadyCompressedPhoto = (compressedDataUrl: string) => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(25);
+    }
+    onUpdatePhoto({
+      id: `p-${Date.now()}`,
+      dataUrl: compressedDataUrl,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      fitMode: photo?.fitMode,
+    });
+    setShowActionMenu(false);
+    setConfirmDelete(false);
+  };
+
   const handleOpenCamera = async () => {
+    saveActiveSlotForCapture();
+
     if (!Capacitor.isNativePlatform()) {
       cameraInputRef.current?.click();
       return;
@@ -108,6 +146,7 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
       });
 
       if (captured.dataUrl) {
+        clearActiveSlotForCapture();
         await saveCompressedPhoto(captured.dataUrl);
       }
     } catch (err) {
@@ -119,6 +158,8 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
   };
 
   const handleOpenTimemark = async () => {
+    saveActiveSlotForCapture();
+
     if (Capacitor.isNativePlatform()) {
       for (const pkg of TIMEMARK_PACKAGES) {
         try {
@@ -171,15 +212,12 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
     cameraInputRef.current?.click();
   };
 
-  const handlePickFromLocalGallery = async () => {
-    // Browser web biasa memakai <input type="file" accept="image/*" />
+  const handleFilePickerFallback = async () => {
     if (!Capacitor.isNativePlatform()) {
       galleryInputRef.current?.click();
       return;
     }
 
-    // Android Native (APK): gunakan FilePicker.pickFiles (ACTION_GET_CONTENT)
-    // agar membuka pemilih file/folder lokal (Files/Galeri HP) yang mengingat folder terakhir (mis. Timemark/DCIM)
     try {
       const result = await FilePicker.pickFiles({
         types: ['image/*'],
@@ -211,6 +249,17 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
       console.error('Local file picker error, falling back to input:', err);
       galleryInputRef.current?.click();
     }
+  };
+
+  const handlePickFromLocalGallery = async () => {
+    // Browser web biasa tetap memakai <input type="file" accept="image/*" />
+    if (!Capacitor.isNativePlatform()) {
+      galleryInputRef.current?.click();
+      return;
+    }
+
+    // Android Native (APK): buka modal Custom Galeri Lokal buatan sendiri (@capacitor-community/media)
+    setShowLocalGallery(true);
   };
 
   const handleSetFitMode = (mode: PhotoFitMode) => {
@@ -616,6 +665,16 @@ export const PhotoBox: React.FC<PhotoBoxProps> = ({
           </div>
         </div>
       )}
+
+      {/* Custom In-App Local Gallery Modal (Android Native) */}
+      <LocalGalleryModal
+        isOpen={showLocalGallery}
+        onSelectPhoto={(compressedDataUrl) => applyAlreadyCompressedPhoto(compressedDataUrl)}
+        onFallbackFilePicker={() => {
+          void handleFilePickerFallback();
+        }}
+        onClose={() => setShowLocalGallery(false)}
+      />
     </div>
   );
 };
